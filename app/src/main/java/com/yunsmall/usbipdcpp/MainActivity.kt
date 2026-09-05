@@ -289,30 +289,69 @@ fun MainScreen(
 
     // 获取设备IP地址
     fun getDeviceIpAddress(): String? {
-        try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val networkInterface = interfaces.nextElement()
-                // 跳过回环接口和未启用的接口
-                if (networkInterface.isLoopback || !networkInterface.isUp) continue
-                // 跳过 VPN/虚拟网卡（tun/ppp 前缀），避免返回虚拟接口地址
-                val ifName = networkInterface.name?.lowercase(Locale.getDefault()) ?: ""
-                if (ifName.startsWith("tun") || ifName.startsWith("ppp") || ifName.startsWith("vpn")) continue
+    try {
+        val candidates = mutableListOf<Pair<Int, String>>()
+        val interfaces = NetworkInterface.getNetworkInterfaces()
 
-                val addresses = networkInterface.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val address = addresses.nextElement()
-                    // 只返回IPv4地址
-                    if (!address.isLoopbackAddress && address.hostAddress?.contains(':') == false) {
-                        return address.hostAddress
+        while (interfaces.hasMoreElements()) {
+            val networkInterface = interfaces.nextElement()
+
+            if (networkInterface.isLoopback || !networkInterface.isUp) continue
+
+            val ifName = networkInterface.name
+                ?.lowercase(Locale.getDefault())
+                ?: ""
+
+            if (
+                ifName.startsWith("tun") ||
+                ifName.startsWith("ppp") ||
+                ifName.startsWith("vpn") ||
+                ifName.startsWith("rmnet") ||
+                ifName.startsWith("clat") ||
+                ifName.startsWith("v4-") ||
+                ifName.startsWith("dummy") ||
+                ifName.startsWith("sit") ||
+                ifName.startsWith("ip6tnl")
+            ) {
+                continue
+            }
+
+            val addresses = networkInterface.inetAddresses
+
+            while (addresses.hasMoreElements()) {
+                val address = addresses.nextElement()
+                val host = address.hostAddress ?: continue
+
+                if (
+                    !address.isLoopbackAddress &&
+                    !address.isLinkLocalAddress &&
+                    address.isSiteLocalAddress &&
+                    !host.contains(':')
+                ) {
+                    val priority = when {
+                        ifName.startsWith("wlan") -> 0
+                        ifName.startsWith("swlan") -> 0
+                        ifName.startsWith("eth") -> 1
+                        ifName.startsWith("en") -> 1
+                        ifName.startsWith("rndis") -> 2
+                        ifName.startsWith("usb") -> 2
+                        else -> 10
                     }
+
+                    candidates.add(priority to host)
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get IP address", e)
         }
-        return null
+
+        return candidates.minByOrNull { it.first }?.second
+
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to get IP address", e)
     }
+
+    return null
+    }
+    
 
     val ipAddress = remember { mutableStateOf<String?>(null) }
 
