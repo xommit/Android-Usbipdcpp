@@ -403,6 +403,13 @@ fun MainScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.language_fr)) },
+                                onClick = {
+                                    setLanguage("fr")
+                                    showLanguageMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.language_zh)) },
                                 onClick = {
                                     setLanguage("zh")
