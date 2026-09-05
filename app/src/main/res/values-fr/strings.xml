@@ -61,6 +61,7 @@
     <!-- Langue -->
     <string name="language">Langue</string>
     <string name="language_en">English</string>
+    <string name="language_fr">Français</string>
     <string name="language_zh">中文</string>
 
     <!-- Copie -->
