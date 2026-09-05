@@ -1,0 +1,78 @@
+<resources>
+    <string name="app_name">Serveur USB/IP</string>
+
+    <!-- Titre de l'application -->
+    <string name="app_title">Serveur USB/IP</string>
+
+    <!-- Contrôle du serveur -->
+    <string name="server_control">Contrôle du serveur</string>
+    <string name="port">Port</string>
+    <string name="start_server">Démarrer le serveur</string>
+    <string name="stop_server">Arrêter le serveur</string>
+    <string name="starting">Démarrage…</string>
+    <string name="stopping">Arrêt…</string>
+
+    <!-- État -->
+    <string name="server_running">Serveur en cours d’exécution</string>
+    <string name="server_stopped">Serveur arrêté</string>
+    <string name="address">Adresse : %1$s:%2$d</string>
+    <string name="devices_bound">%1$d périphérique(s) associé(s)</string>
+
+    <!-- Liste des périphériques -->
+    <string name="usb_devices">Périphériques USB</string>
+    <string name="refresh">Actualiser</string>
+    <string name="no_devices">Aucun périphérique USB détecté</string>
+    <string name="bind">Associer</string>
+    <string name="unbind">Dissocier</string>
+    <string name="unknown_device">Périphérique inconnu</string>
+
+    <!-- Journal -->
+    <string name="log">Journal</string>
+    <string name="expand">Agrandir</string>
+    <string name="copy">Copier</string>
+    <string name="clear">Effacer</string>
+    <string name="log_messages">Messages du journal</string>
+    <string name="close">Fermer</string>
+    <string name="no_logs">Aucun journal pour le moment</string>
+
+    <!-- Messages -->
+    <string name="please_start_server">Veuillez d’abord démarrer le serveur</string>
+    <string name="permission_denied">Permission refusée</string>
+    <string name="device_unavailable">Périphérique indisponible (il est peut-être utilisé par le système)</string>
+    <string name="bind_success">Périphérique associé : %1$s</string>
+    <string name="bind_failed">Échec de l’association : %1$s</string>
+    <string name="unbind_success">Périphérique dissocié : %1$s</string>
+    <string name="unbind_failed">Échec de la dissociation : %1$s</string>
+    <string name="device_detached">Périphérique déconnecté : %1$s</string>
+
+    <!-- Erreurs -->
+    <string name="error_device_not_found">Périphérique introuvable</string>
+    <string name="error_device_in_use">Le périphérique est utilisé</string>
+    <string name="error_device_open_failed">Impossible d’ouvrir le périphérique</string>
+    <string name="error_get_descriptor_failed">Impossible d’obtenir le descripteur du périphérique</string>
+    <string name="error_get_config_failed">Impossible d’obtenir le descripteur de configuration</string>
+    <string name="error_claim_interface_failed">Impossible de prendre le contrôle de l’interface</string>
+    <string name="error_unknown">Erreur inconnue</string>
+    <string name="service_not_ready">Service non prêt</string>
+    <string name="log_copied">Journal copié</string>
+    <string name="native_init_failed">Échec de l’initialisation de la bibliothèque native</string>
+    <string name="permission_request_pending">Une demande d’autorisation est déjà en cours</string>
+
+    <!-- Langue -->
+    <string name="language">Langue</string>
+    <string name="language_en">English</string>
+    <string name="language_zh">中文</string>
+
+    <!-- Copie -->
+    <string name="copy_ip">Copier l’IP : %1$s</string>
+    <string name="copy_port">Copier le port : %1$d</string>
+    <string name="copy_address">Copier %1$s:%2$d</string>
+
+    <!-- À propos -->
+    <string name="about">À propos</string>
+    <string name="about_title">Serveur USB/IP</string>
+    <string name="about_description">Partagez des périphériques USB sur le réseau à l’aide du protocole USB/IP.</string>
+    <string name="about_version">Version : %1$s</string>
+    <string name="about_github">GitHub : yunsmall/Android-Usbipdcpp</string>
+    <string name="about_license">Licence : GPL-3.0</string>
+</resources>
