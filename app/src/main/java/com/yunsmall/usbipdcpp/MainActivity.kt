@@ -2021,37 +2021,19 @@ fun ServerControlPanel(
                                                 Modifier.width(6.dp)
                                         )
 
-                                        Column(
-                                            modifier =
-                                                Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                text = option.address,
-                                                style =
-                                                    MaterialTheme
-                                                        .typography
-                                                        .bodyMedium
-                                            )
-
-                                            option.interfaceName
-                                                ?.takeIf {
-                                                    it.isNotBlank()
-                                                }
+                                        Text(
+                                            text = option.interfaceName
+                                                ?.takeIf { it.isNotBlank() }
                                                 ?.let { interfaceName ->
-                                                    Text(
-                                                        text =
-                                                            interfaceName,
-                                                        style =
-                                                            MaterialTheme
-                                                                .typography
-                                                                .bodySmall,
-                                                        color =
-                                                            MaterialTheme
-                                                                .colorScheme
-                                                                .onSurfaceVariant
-                                                    )
+                                                    "$interfaceName • ${option.address}"
                                                 }
-                                        }
+                                                ?: option.address,
+                                            style =
+                                                MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }
@@ -2060,22 +2042,64 @@ fun ServerControlPanel(
                 }
             }
 
-            OutlinedTextField(
-                value = portText,
-                onValueChange = {
-                    onPortChange(it.filter { c -> c.isDigit() })
-                },
-                label = { Text(stringResource(R.string.port)) },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number
-                ),
-                modifier = Modifier.width(120.dp),
-                enabled =
-                    !serverRunning &&
-                        !isStarting &&
-                        !isStopping,
-                singleLine = true
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor =
+                        MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 16.dp,
+                            vertical = 12.dp
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement =
+                        Arrangement.spacedBy(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.port),
+                            style =
+                                MaterialTheme.typography.titleSmall
+                        )
+
+                        Text(
+                            text = "TCP",
+                            style =
+                                MaterialTheme.typography.bodySmall,
+                            color =
+                                MaterialTheme.colorScheme
+                                    .onSurfaceVariant
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = portText,
+                        onValueChange = {
+                            onPortChange(
+                                it.filter { c -> c.isDigit() }
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        modifier = Modifier.width(128.dp),
+                        enabled =
+                            !serverRunning &&
+                                !isStarting &&
+                                !isStopping,
+                        singleLine = true,
+                        textStyle =
+                            MaterialTheme.typography.titleMedium
+                    )
+                }
+            }
         }
     }
 }
