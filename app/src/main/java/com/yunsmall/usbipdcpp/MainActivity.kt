@@ -1827,9 +1827,6 @@ fun ServerControlPanel(
 ) {
     val context = LocalContext.current
 
-    var showListenTypeMenu by remember {
-        mutableStateOf(false)
-    }
     var showListenAddressMenu by remember {
         mutableStateOf(false)
     }
@@ -1851,8 +1848,13 @@ fun ServerControlPanel(
 
             /*
              * Type de réseau : Toutes / VPN / Wi-Fi / Ethernet.
-             * Désactivé pendant le démarrage et lorsque le serveur tourne afin
-             * que l'UI corresponde toujours au socket natif réellement actif.
+             *
+             * Des boutons radio sont utilisés plutôt qu'un menu déroulant :
+             * les quatre choix restent visibles d'un coup d'œil.
+             *
+             * Les choix sont verrouillés pendant le démarrage, l'arrêt et
+             * lorsque le serveur tourne afin que l'UI corresponde toujours au
+             * socket natif réellement actif.
              */
             Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1862,69 +1864,68 @@ fun ServerControlPanel(
                     style = MaterialTheme.typography.labelMedium
                 )
 
-                Box {
-                    OutlinedButton(
-                        onClick = {
-                            showListenTypeMenu = true
-                        },
-                        enabled =
-                            !serverRunning &&
-                                !isStarting &&
-                                !isStopping,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text =
-                                listenInterfaceTypeLabel(
-                                    context,
-                                    listenType
-                                ),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showListenTypeMenu,
-                        onDismissRequest = {
-                            showListenTypeMenu = false
+                ListenInterfaceType.values().forEach { type ->
+                    val count =
+                        if (type == ListenInterfaceType.ALL) {
+                            null
+                        } else {
+                            availableListenAddresses.count {
+                                it.type == type
+                            }
                         }
-                    ) {
-                        ListenInterfaceType.values().forEach { type ->
-                            val count =
-                                if (
-                                    type ==
-                                    ListenInterfaceType.ALL
-                                ) {
-                                    null
-                                } else {
-                                    availableListenAddresses.count {
-                                        it.type == type
-                                    }
-                                }
 
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        buildString {
-                                            append(
-                                                listenInterfaceTypeLabel(
-                                                    context,
-                                                    type
-                                                )
-                                            )
-
-                                            if (count != null) {
-                                                append(" ($count)")
-                                            }
-                                        }
-                                    )
-                                },
-                                onClick = {
-                                    onListenTypeChange(type)
-                                    showListenTypeMenu = false
-                                }
+                    val canSelect =
+                        !serverRunning &&
+                            !isStarting &&
+                            !isStopping &&
+                            (
+                                type == ListenInterfaceType.ALL ||
+                                    (count ?: 0) > 0
                             )
-                        }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                enabled = canSelect
+                            ) {
+                                onListenTypeChange(type)
+                            }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = listenType == type,
+                            onClick = {
+                                if (canSelect) {
+                                    onListenTypeChange(type)
+                                }
+                            },
+                            enabled = canSelect
+                        )
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        Text(
+                            text = buildString {
+                                append(
+                                    listenInterfaceTypeLabel(
+                                        context,
+                                        type
+                                    )
+                                )
+
+                                if (count != null) {
+                                    append(" ($count)")
+                                }
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (canSelect || listenType == type) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
                     }
                 }
             }
