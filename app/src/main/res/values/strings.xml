@@ -25,6 +25,9 @@
     <string name="authorize">Authorize</string>
     <string name="usb_permission_granted">USB permission granted</string>
     <string name="usb_permission_required">USB permission required</string>
+    <string name="usb_hub_not_shareable">USB hub — not shareable</string>
+    <string name="usb_billboard_not_shareable">USB Billboard device — not shareable</string>
+    <string name="usb_blacklisted_not_shareable">Known incompatible USB device — not shareable</string>
     <string name="bind">Bind</string>
     <string name="unbind">Unbind</string>
     <string name="unknown_device">Unknown Device</string>
