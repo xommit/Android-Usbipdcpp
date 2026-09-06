@@ -1438,7 +1438,31 @@ fun MainScreen(
                                 },
                                 onListenAddressChange = {
                                     selectedListenAddress = it
-                                },
+                                }
+                            )
+                        }
+                    }
+
+                    // Page 1 : statut et périphériques USB — page principale
+                    1 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            ServerActionButton(
+                                serverRunning = serverRunning,
+                                isStarting = isStarting,
+                                isStopping = isStopping,
+                                canStart =
+                                    selectedListenType == ListenInterfaceType.ALL ||
+                                        selectedListenAddress.isNotBlank(),
                                 onStart = {
                                     val port = portText.toIntOrNull() ?: 3240
                                     val service = usbService
@@ -1449,7 +1473,7 @@ fun MainScreen(
                                             context.getString(R.string.service_not_ready),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
                                     }
 
                                     if (!service.nativeReady) {
@@ -1458,13 +1482,13 @@ fun MainScreen(
                                             context.getString(R.string.native_init_failed),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
                                     }
 
                                     /*
-                                     * Revalider au dernier moment :
-                                     * un VPN/Wi-Fi/Ethernet peut avoir disparu
-                                     * depuis la dernière actualisation de l'UI.
+                                     * Revalider l'interface juste avant le
+                                     * démarrage pour éviter tout fallback
+                                     * silencieux vers 0.0.0.0.
                                      */
                                     val listenAddress =
                                         NetworkInterfaceResolver.resolveListenAddress(
@@ -1481,7 +1505,7 @@ fun MainScreen(
                                             listenInterfaceUnavailableText(context),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
                                     }
 
                                     if (
@@ -1496,7 +1520,7 @@ fun MainScreen(
                                             listenInterfaceUnavailableText(context),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
                                     }
 
                                     isStarting = true
@@ -1526,10 +1550,11 @@ fun MainScreen(
                                             context.getString(R.string.service_not_ready),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
                                     }
 
                                     isStopping = true
+
                                     scope.launch {
                                         service.stopServer()
                                         isStopping = false
@@ -1538,22 +1563,7 @@ fun MainScreen(
                                     }
                                 }
                             )
-                        }
-                    }
 
-                    // Page 1 : statut et périphériques USB — page principale
-                    1 -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(
-                                    start = 16.dp,
-                                    top = 16.dp,
-                                    end = 16.dp,
-                                    bottom = 8.dp
-                                ),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
                             StatusCard(
                                 serverRunning = serverRunning,
                                 boundCount = boundDevices.size,
@@ -1821,20 +1831,9 @@ fun ServerControlPanel(
     availableListenAddresses: List<ListenAddressOption>,
     selectedListenAddress: String,
     onListenTypeChange: (ListenInterfaceType) -> Unit,
-    onListenAddressChange: (String) -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit
+    onListenAddressChange: (String) -> Unit
 ) {
     val context = LocalContext.current
-
-    var showListenAddressMenu by remember {
-        mutableStateOf(false)
-    }
-
-    val addressCandidates =
-        availableListenAddresses.filter {
-            it.type == listenType
-        }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1847,262 +1846,297 @@ fun ServerControlPanel(
             )
 
             /*
-             * Type de réseau : Toutes / VPN / Wi-Fi / Ethernet.
+             * Sélection de l'interface d'écoute.
              *
-             * Des boutons radio sont utilisés plutôt qu'un menu déroulant :
-             * les quatre choix restent visibles d'un coup d'œil.
+             * "Toutes" reste séparé en haut et correspond à 0.0.0.0.
+             * VPN / Wi-Fi / Ethernet sont ensuite présentés chacun dans leur
+             * propre bloc, avec une puce par IPv4 réellement disponible.
              *
-             * Les choix sont verrouillés pendant le démarrage, l'arrêt et
-             * lorsque le serveur tourne afin que l'UI corresponde toujours au
-             * socket natif réellement actif.
+             * Une seule puce peut être sélectionnée à la fois.
              */
             Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     text = listenInterfaceFieldLabel(context),
                     style = MaterialTheme.typography.labelMedium
                 )
 
-                ListenInterfaceType.values().forEach { type ->
-                    val count =
-                        if (type == ListenInterfaceType.ALL) {
-                            null
-                        } else {
-                            availableListenAddresses.count {
-                                it.type == type
-                            }
-                        }
+                val canChangeListenInterface =
+                    !serverRunning &&
+                        !isStarting &&
+                        !isStopping
 
-                    val canSelect =
-                        !serverRunning &&
-                            !isStarting &&
-                            !isStopping &&
-                            (
-                                type == ListenInterfaceType.ALL ||
-                                    (count ?: 0) > 0
-                            )
-
+                /*
+                 * Choix global : écoute sur toutes les interfaces IPv4.
+                 */
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(
-                                enabled = canSelect
+                                enabled = canChangeListenInterface
                             ) {
-                                onListenTypeChange(type)
+                                onListenTypeChange(
+                                    ListenInterfaceType.ALL
+                                )
                             }
-                            .padding(vertical = 2.dp),
+                            .padding(
+                                horizontal = 12.dp,
+                                vertical = 8.dp
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = listenType == type,
+                            selected =
+                                listenType ==
+                                    ListenInterfaceType.ALL,
                             onClick = {
-                                if (canSelect) {
-                                    onListenTypeChange(type)
+                                if (canChangeListenInterface) {
+                                    onListenTypeChange(
+                                        ListenInterfaceType.ALL
+                                    )
                                 }
                             },
-                            enabled = canSelect
+                            enabled = canChangeListenInterface
                         )
 
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
 
                         Text(
-                            text = buildString {
-                                append(
-                                    listenInterfaceTypeLabel(
-                                        context,
-                                        type
-                                    )
-                                )
-
-                                if (count != null) {
-                                    append(" ($count)")
-                                }
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (canSelect || listenType == type) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                            text = listenInterfaceTypeLabel(
+                                context,
+                                ListenInterfaceType.ALL
+                            ),
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }
-            }
 
-            /*
-             * Si plusieurs VPN (ou plusieurs adresses d'un même transport)
-             * existent, l'utilisateur choisit explicitement l'IPv4.
-             */
-            if (listenType != ListenInterfaceType.ALL) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = listenAddressFieldLabel(context),
-                        style = MaterialTheme.typography.labelMedium
-                    )
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(
+                            MaterialTheme.colorScheme.outlineVariant
+                        )
+                )
 
-                    Box {
-                        OutlinedButton(
-                            onClick = {
-                                if (addressCandidates.isNotEmpty()) {
-                                    showListenAddressMenu = true
+                /*
+                 * Un bloc distinct par transport. Chaque IPv4 est directement
+                 * une option radio : aucun menu d'adresse supplémentaire.
+                 */
+                listOf(
+                    ListenInterfaceType.VPN,
+                    ListenInterfaceType.WIFI,
+                    ListenInterfaceType.ETHERNET
+                ).forEach { type ->
+                    val addresses =
+                        availableListenAddresses
+                            .filter { it.type == type }
+                            .distinctBy { it.address }
+                            .sortedWith(
+                                compareBy<ListenAddressOption> {
+                                    it.interfaceName.orEmpty()
+                                }.thenBy {
+                                    it.address
                                 }
-                            },
-                            enabled =
-                                !serverRunning &&
-                                    !isStarting &&
-                                    !isStopping &&
-                                    addressCandidates.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val selectedOption =
-                                addressCandidates.firstOrNull {
-                                    it.address ==
-                                    selectedListenAddress
-                                }
-
-                            val text =
-                                when {
-                                    addressCandidates.isEmpty() ->
-                                        noListenAddressText(context)
-
-                                    selectedOption == null ->
-                                        selectListenAddressText(context)
-
-                                    selectedOption.interfaceName
-                                        ?.isNotBlank() == true ->
-                                        "${selectedOption.address} • " +
-                                            selectedOption.interfaceName
-
-                                    else ->
-                                        selectedOption.address
-                                }
-
-                            Text(
-                                text = text,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
                             )
-                        }
 
-                        DropdownMenu(
-                            expanded = showListenAddressMenu,
-                            onDismissRequest = {
-                                showListenAddressMenu = false
-                            }
+                    Card(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement =
+                                Arrangement.spacedBy(4.dp)
                         ) {
-                            addressCandidates.forEach { option ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(option.address)
+                            Text(
+                                text = listenInterfaceTypeLabel(
+                                    context,
+                                    type
+                                ),
+                                style =
+                                    MaterialTheme.typography.titleSmall
+                            )
+
+                            if (addresses.isEmpty()) {
+                                Text(
+                                    text = noListenAddressText(context),
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                    color =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant
+                                )
+                            } else {
+                                addresses.forEach { option ->
+                                    val isSelected =
+                                        listenType == type &&
+                                            selectedListenAddress ==
+                                                option.address
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable(
+                                                enabled =
+                                                    canChangeListenInterface
+                                            ) {
+                                                /*
+                                                 * Le callback de type remet
+                                                 * d'abord l'adresse à vide ;
+                                                 * le callback suivant fixe
+                                                 * immédiatement l'IPv4 choisie.
+                                                 */
+                                                onListenTypeChange(type)
+                                                onListenAddressChange(
+                                                    option.address
+                                                )
+                                            }
+                                            .padding(vertical = 2.dp),
+                                        verticalAlignment =
+                                            Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                if (
+                                                    canChangeListenInterface
+                                                ) {
+                                                    onListenTypeChange(type)
+                                                    onListenAddressChange(
+                                                        option.address
+                                                    )
+                                                }
+                                            },
+                                            enabled =
+                                                canChangeListenInterface
+                                        )
+
+                                        Spacer(
+                                            modifier =
+                                                Modifier.width(6.dp)
+                                        )
+
+                                        Column(
+                                            modifier =
+                                                Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = option.address,
+                                                style =
+                                                    MaterialTheme
+                                                        .typography
+                                                        .bodyMedium
+                                            )
 
                                             option.interfaceName
                                                 ?.takeIf {
                                                     it.isNotBlank()
                                                 }
-                                                ?.let {
+                                                ?.let { interfaceName ->
                                                     Text(
-                                                        text = it,
+                                                        text =
+                                                            interfaceName,
                                                         style =
                                                             MaterialTheme
                                                                 .typography
-                                                                .bodySmall
+                                                                .bodySmall,
+                                                        color =
+                                                            MaterialTheme
+                                                                .colorScheme
+                                                                .onSurfaceVariant
                                                     )
                                                 }
                                         }
-                                    },
-                                    onClick = {
-                                        onListenAddressChange(
-                                            option.address
-                                        )
-                                        showListenAddressMenu = false
                                     }
-                                )
+                                }
                             }
                         }
                     }
                 }
             }
 
+            OutlinedTextField(
+                value = portText,
+                onValueChange = {
+                    onPortChange(it.filter { c -> c.isDigit() })
+                },
+                label = { Text(stringResource(R.string.port)) },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                ),
+                modifier = Modifier.width(120.dp),
+                enabled =
+                    !serverRunning &&
+                        !isStarting &&
+                        !isStopping,
+                singleLine = true
+            )
+        }
+    }
+}
+
+@Composable
+fun ServerActionButton(
+    serverRunning: Boolean,
+    isStarting: Boolean,
+    isStopping: Boolean,
+    canStart: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
+    if (serverRunning || isStopping) {
+        Button(
+            onClick = onStop,
+            enabled = !isStopping,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error
+            )
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = portText,
-                    onValueChange = {
-                        onPortChange(it.filter { c -> c.isDigit() })
-                    },
-                    label = { Text(stringResource(R.string.port)) },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number
-                    ),
-                    modifier = Modifier.width(100.dp),
-                    enabled =
-                        !serverRunning &&
-                            !isStarting &&
-                            !isStopping,
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                if (serverRunning || isStopping) {
-                    Button(
-                        onClick = onStop,
-                        enabled = !isStopping,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (isStopping) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onError
-                                )
-                                Text(stringResource(R.string.stopping))
-                            } else {
-                                Text(stringResource(R.string.stop_server))
-                            }
-                        }
-                    }
+                if (isStopping) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onError
+                    )
+                    Text(stringResource(R.string.stopping))
                 } else {
-                    Button(
-                        onClick = onStart,
-                        enabled =
-                            !isStarting &&
-                                (
-                                    listenType ==
-                                        ListenInterfaceType.ALL ||
-                                        selectedListenAddress.isNotBlank()
-                                )
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (isStarting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Text(stringResource(R.string.starting))
-                            } else {
-                                Text(stringResource(R.string.start_server))
-                            }
-                        }
-                    }
+                    Text(stringResource(R.string.stop_server))
+                }
+            }
+        }
+    } else {
+        Button(
+            onClick = onStart,
+            enabled = !isStarting && canStart,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isStarting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Text(stringResource(R.string.starting))
+                } else {
+                    Text(stringResource(R.string.start_server))
                 }
             }
         }
