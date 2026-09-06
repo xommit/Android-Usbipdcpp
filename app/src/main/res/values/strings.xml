@@ -22,6 +22,9 @@
     <string name="usb_devices">USB Devices</string>
     <string name="refresh">Refresh</string>
     <string name="no_devices">No USB devices found</string>
+    <string name="authorize">Authorize</string>
+    <string name="usb_permission_granted">USB permission granted</string>
+    <string name="usb_permission_required">USB permission required</string>
     <string name="bind">Bind</string>
     <string name="unbind">Unbind</string>
     <string name="unknown_device">Unknown Device</string>
