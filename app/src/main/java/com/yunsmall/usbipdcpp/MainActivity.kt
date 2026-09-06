@@ -1,35 +1,29 @@
 package com.yunsmall.usbipdcpp
 
 import android.Manifest
-import android.hardware.usb.UsbConstants
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.NetworkInterface
-import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.content.ContextCompat
-import androidx.core.os.LocaleListCompat
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -53,9 +47,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import com.yunsmall.usbipdcpp.ui.theme.UsbipdcppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Locale
 
 // 文件顶层常量：MainScreen 是顶层函数而非 MainActivity 方法，
 // 常量放 companion（private）会访问不到
@@ -289,69 +289,86 @@ fun MainScreen(
 
     // 获取设备IP地址
     fun getDeviceIpAddress(): String? {
-    try {
-        val candidates = mutableListOf<Pair<Int, String>>()
-        val interfaces = NetworkInterface.getNetworkInterfaces()
+        try {
+            val candidates = mutableListOf<Pair<Int, String>>()
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
 
-        while (interfaces.hasMoreElements()) {
-            val networkInterface = interfaces.nextElement()
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
 
-            if (networkInterface.isLoopback || !networkInterface.isUp) continue
+                if (networkInterface.isLoopback || !networkInterface.isUp) {
+                    continue
+                }
 
-            val ifName = networkInterface.name
-                ?.lowercase(Locale.getDefault())
-                ?: ""
+                val ifName = networkInterface.name
+                    ?.lowercase(Locale.getDefault())
+                    ?: ""
 
-            if (
-                ifName.startsWith("tun") ||
-                ifName.startsWith("ppp") ||
-                ifName.startsWith("vpn") ||
-                ifName.startsWith("rmnet") ||
-                ifName.startsWith("clat") ||
-                ifName.startsWith("v4-") ||
-                ifName.startsWith("dummy") ||
-                ifName.startsWith("sit") ||
-                ifName.startsWith("ip6tnl")
-            ) {
-                continue
-            }
-
-            val addresses = networkInterface.inetAddresses
-
-            while (addresses.hasMoreElements()) {
-                val address = addresses.nextElement()
-                val host = address.hostAddress ?: continue
-
+                // Interfaces Android parasites à ignorer
                 if (
-                    !address.isLoopbackAddress &&
-                    !address.isLinkLocalAddress &&
-                    address.isSiteLocalAddress &&
-                    !host.contains(':')
+                    ifName.startsWith("clat") ||
+                    ifName.startsWith("v4-") ||
+                    ifName.startsWith("dummy") ||
+                    ifName.startsWith("sit") ||
+                    ifName.startsWith("ip6tnl") ||
+                    ifName.startsWith("rmnet")
                 ) {
+                    continue
+                }
+
+                val addresses = networkInterface.inetAddresses
+
+                while (addresses.hasMoreElements()) {
+                    val address = addresses.nextElement()
+                    val host = address.hostAddress ?: continue
+
+                    // IPv4 uniquement
+                    if (
+                        address !is Inet4Address ||
+                        address.isLoopbackAddress ||
+                        address.isLinkLocalAddress
+                    ) {
+                        continue
+                    }
+
+                    // Adresse parasite observée sur Android
+                    if (host.startsWith("192.0.0.")) {
+                        continue
+                    }
+
                     val priority = when {
-                        ifName.startsWith("wlan") -> 0
-                        ifName.startsWith("swlan") -> 0
-                        ifName.startsWith("eth") -> 1
-                        ifName.startsWith("en") -> 1
-                        ifName.startsWith("rndis") -> 2
-                        ifName.startsWith("usb") -> 2
+                        // WireGuard / VPN : priorité maximale
+                        ifName.startsWith("wg") -> 0
+                        ifName.startsWith("tun") -> 0
+                        ifName.startsWith("vpn") -> 0
+
+                        // Wi-Fi
+                        ifName.startsWith("wlan") -> 1
+                        ifName.startsWith("swlan") -> 1
+
+                        // Ethernet
+                        ifName.startsWith("eth") -> 2
+                        ifName.startsWith("en") -> 2
+
+                        // USB
+                        ifName.startsWith("rndis") -> 3
+                        ifName.startsWith("usb") -> 3
+
                         else -> 10
                     }
 
                     candidates.add(priority to host)
                 }
             }
+
+            return candidates.minByOrNull { it.first }?.second
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get IP address", e)
         }
 
-        return candidates.minByOrNull { it.first }?.second
-
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to get IP address", e)
+        return null
     }
-
-    return null
-    }
-    
 
     val ipAddress = remember { mutableStateOf<String?>(null) }
 
@@ -360,6 +377,8 @@ fun MainScreen(
         if (serverRunning) {
             // 网络接口枚举可能耗时（多虚拟网卡时），放 IO 线程避免卡主线程
             ipAddress.value = withContext(Dispatchers.IO) { getDeviceIpAddress() }
+        } else {
+            ipAddress.value = null
         }
     }
 
