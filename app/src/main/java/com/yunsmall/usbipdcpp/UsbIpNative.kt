@@ -32,7 +32,15 @@ object UsbIpNative {
     external fun bindUsbDeviceNative(fd: Int, vendorId: Int, productId: Int, outBusid: Array<String?>): Int
     external fun unbindUsbDeviceNative(fd: Int): Int
     external fun notifyDeviceRemovedNative(busid: String)
-    external fun startServer(port: Int): Boolean
+
+    /**
+     * Démarre le serveur USB/IP sur l'adresse IPv4 locale indiquée.
+     *
+     * listenAddress = "0.0.0.0" : écoute sur toutes les interfaces IPv4.
+     * Une IPv4 locale précise limite l'écoute à cette adresse.
+     */
+    external fun startServer(port: Int, listenAddress: String): Boolean
+
     external fun stopServer()
     external fun isServerRunning(): Boolean
     external fun release()
