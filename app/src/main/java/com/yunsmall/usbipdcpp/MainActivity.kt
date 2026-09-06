@@ -70,6 +70,75 @@ data class NetworkAddress(
     val priority: Int
 )
 
+private data class ParsedLogLine(
+    val timestamp: String?,
+    val level: String?,
+    val message: String
+)
+
+private fun parseLogLine(rawMessage: String): ParsedLogLine {
+    val message = rawMessage.trim()
+
+    // Compatibilité avec l'ancien format natif spdlog :
+    // [HH:mm:ss] [level] message
+    //
+    // Après la modification de jni_callback_sink.h, le callback recevra
+    // uniquement le message brut. Ce parseur permet donc aux deux versions
+    // de fonctionner sans double horodatage.
+    val nativePattern = Regex(
+        pattern = """^\[(\d{2}:\d{2}:\d{2})]\s*\[([^\]]+)]\s*(.*)$""",
+        option = RegexOption.DOT_MATCHES_ALL
+    )
+    val nativeMatch = nativePattern.matchEntire(message)
+
+    if (nativeMatch != null) {
+        return ParsedLogLine(
+            timestamp = nativeMatch.groupValues[1],
+            level = nativeMatch.groupValues[2],
+            message = nativeMatch.groupValues[3].trim()
+        )
+    }
+
+    val timestampOnlyPattern = Regex(
+        pattern = """^\[(\d{2}:\d{2}:\d{2})]\s*(.*)$""",
+        option = RegexOption.DOT_MATCHES_ALL
+    )
+    val timestampOnlyMatch = timestampOnlyPattern.matchEntire(message)
+
+    if (timestampOnlyMatch != null) {
+        return ParsedLogLine(
+            timestamp = timestampOnlyMatch.groupValues[1],
+            level = null,
+            message = timestampOnlyMatch.groupValues[2].trim()
+        )
+    }
+
+    return ParsedLogLine(
+        timestamp = null,
+        level = null,
+        message = message
+    )
+}
+
+/*
+ * spdlog::level::level_enum :
+ * trace = 0, debug = 1, info = 2, warn = 3,
+ * err = 4, critical = 5, off = 6.
+ *
+ * Le niveau est déjà transmis séparément par le callback JNI.
+ */
+private fun nativeLogLevelName(level: Int): String? {
+    return when (level) {
+        0 -> "trace"
+        1 -> "debug"
+        2 -> "info"
+        3 -> "warn"
+        4 -> "error"
+        5 -> "critical"
+        else -> null
+    }
+}
+
 class MainActivity : AppCompatActivity() {
 
     private val usbManager: UsbManager by lazy {
@@ -288,13 +357,43 @@ fun MainScreen(
         }
     }
 
-    fun addLog(message: String) {
-        logMessages = logMessages + "[${java.text.SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(java.util.Date())}] $message"
+    fun addLog(message: String, level: Int? = null) {
+        val parsed = parseLogLine(message)
+
+        val timestamp = parsed.timestamp
+            ?: java.text.SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                .format(java.util.Date())
+
+        // Avec l'ancien C++, le niveau peut encore être présent dans le texte.
+        // Avec le nouveau jni_callback_sink.h, on utilise le niveau transmis
+        // séparément par JNI.
+        val levelName = parsed.level
+            ?.takeIf { it.isNotBlank() }
+            ?: level?.let { nativeLogLevelName(it) }
+
+        val levelPrefix = levelName
+            ?.let { "[$it] " }
+            ?: ""
+
+        // Toute la traduction du journal est centralisée dans LogLocalizer.kt,
+        // qui utilise les ressources Android values/values-fr/values-zh.
+        val localizedMessage = LogLocalizer.localize(
+            context = context,
+            sourceMessage = parsed.message
+        )
+
+        logMessages =
+            logMessages + "[$timestamp] $levelPrefix$localizedMessage"
     }
 
     fun refreshDevices() {
         devices = permissionManager.getDeviceList()
-        addLog("Found ${devices.size} USB device(s)")
+
+        // Message canonique reconnu par LogLocalizer.kt.
+        addLog(
+            message = "Found ${devices.size} USB device(s)",
+            level = 2
+        )
     }
 
     fun refreshState() {
@@ -411,7 +510,12 @@ fun MainScreen(
         val mainHandler = Handler(Looper.getMainLooper())
         val callback = object : LogCallback {
             override fun onLog(level: Int, message: String) {
-                mainHandler.post { addLog(message.trim()) }
+                mainHandler.post {
+                    addLog(
+                        message = message.trim(),
+                        level = level
+                    )
+                }
             }
         }
         UsbIpNative.setLogCallback(callback)

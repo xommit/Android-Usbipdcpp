@@ -35,6 +35,38 @@
     <string name="close">Close</string>
     <string name="no_logs">No logs yet</string>
 
+    <!-- Native / Runtime Log Messages -->
+    <string name="log_devices_found">%1$d USB device(s) found</string>
+
+    <string name="log_server_starting">Starting USB/IP server on port %1$d</string>
+    <string name="log_server_started">Server started successfully</string>
+    <string name="log_server_stopping">Stopping USB/IP server</string>
+    <string name="log_server_stopped">USB/IP server stopped</string>
+    <string name="log_server_stop_success">Server stopped successfully</string>
+
+    <string name="log_listening">Listening on %1$s:%2$d</string>
+
+    <string name="log_waiting_sessions">Waiting for all sessions to close</string>
+    <string name="log_sessions_closed">All sessions closed successfully</string>
+
+    <string name="log_libusb_thread_starting">Starting libusb event thread</string>
+    <string name="log_libusb_thread_started">libusb event thread started</string>
+    <string name="log_libusb_thread_stopping">Waiting for libusb event thread to stop</string>
+    <string name="log_libusb_thread_stopped">libusb event thread stopped</string>
+
+    <string name="log_client_connected">Client connected: %1$s</string>
+    <string name="log_client_disconnected">Client disconnected: %1$s</string>
+
+    <string name="log_device_attached">USB device attached: %1$s</string>
+    <string name="log_device_detached_native">USB device detached: %1$s</string>
+    <string name="log_device_bound">USB device bound: %1$s</string>
+    <string name="log_device_unbound">USB device unbound: %1$s</string>
+
+    <string name="log_session_started">USB/IP session started</string>
+    <string name="log_session_stopped">USB/IP session stopped</string>
+
+    <string name="log_unknown_message">%1$s</string>
+
     <!-- Toast Messages -->
     <string name="please_start_server">Please start server first</string>
     <string name="permission_denied">Permission denied</string>
