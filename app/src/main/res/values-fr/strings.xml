@@ -22,6 +22,9 @@
     <string name="usb_devices">Périphériques USB</string>
     <string name="refresh">Actualiser</string>
     <string name="no_devices">Aucun périphérique USB détecté</string>
+    <string name="authorize">Autoriser</string>
+    <string name="usb_permission_granted">Permission USB accordée</string>
+    <string name="usb_permission_required">Permission USB requise</string>
     <string name="bind">Associer</string>
     <string name="unbind">Dissocier</string>
     <string name="unknown_device">Périphérique inconnu</string>
