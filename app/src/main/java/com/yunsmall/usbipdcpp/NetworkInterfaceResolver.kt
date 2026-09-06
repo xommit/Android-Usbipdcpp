@@ -62,34 +62,39 @@ object NetworkInterfaceResolver {
                     as ConnectivityManager
 
         try {
-            connectivityManager.allNetworks.forEach { network ->
+            for (network in connectivityManager.allNetworks) {
                 val capabilities =
                     connectivityManager.getNetworkCapabilities(network)
-                        ?: return@forEach
+                        ?: continue
 
                 val type = classifyNetwork(capabilities)
-                    ?: return@forEach
+                    ?: continue
 
                 val linkProperties =
                     connectivityManager.getLinkProperties(network)
-                        ?: return@forEach
+                        ?: continue
 
-                linkProperties.linkAddresses
-                    .asSequence()
-                    .map { it.address }
-                    .filterIsInstance<Inet4Address>()
-                    .filter { address ->
-                        !address.isAnyLocalAddress &&
-                        !address.isLoopbackAddress &&
-                        !address.isLinkLocalAddress
+                for (linkAddress in linkProperties.linkAddresses) {
+                    val address = linkAddress.address
+
+                    if (
+                        address !is Inet4Address ||
+                        address.isAnyLocalAddress ||
+                        address.isLoopbackAddress ||
+                        address.isLinkLocalAddress
+                    ) {
+                        continue
                     }
-                    .forEach { address ->
-                        result += ListenAddressOption(
-                            type = type,
-                            address = address.hostAddress ?: return@forEach,
-                            interfaceName = linkProperties.interfaceName
-                        )
-                    }
+
+                    val hostAddress = address.hostAddress
+                        ?: continue
+
+                    result += ListenAddressOption(
+                        type = type,
+                        address = hostAddress,
+                        interfaceName = linkProperties.interfaceName
+                    )
+                }
             }
         } catch (e: SecurityException) {
             // ACCESS_NETWORK_STATE manquant ou réseau non accessible.
@@ -174,6 +179,28 @@ object NetworkInterfaceResolver {
 
         return getAvailableAddresses(context, type)
             .any { it.address == address }
+    }
+
+    /**
+     * Vérifie qu'une IPv4 ciblée existe encore sur l'un des réseaux
+     * sélectionnables (VPN, Wi-Fi ou Ethernet).
+     *
+     * Utilisé par UsbService pour continuer à protéger le serveur même quand
+     * MainActivity n'est plus affichée.
+     */
+    fun isAddressAvailable(
+        context: Context,
+        address: String
+    ): Boolean {
+        if (address == ALL_INTERFACES_ADDRESS) {
+            return true
+        }
+
+        return getAvailableAddresses(context)
+            .any {
+                it.type != ListenInterfaceType.ALL &&
+                    it.address == address
+            }
     }
 
     /**

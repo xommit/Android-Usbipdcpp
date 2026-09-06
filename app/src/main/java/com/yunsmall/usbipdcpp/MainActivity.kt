@@ -54,8 +54,12 @@ import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.yunsmall.usbipdcpp.ui.theme.UsbipdcppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.util.Locale
 
 // 文件顶层常量：MainScreen 是顶层函数而非 MainActivity 方法，
@@ -174,6 +178,110 @@ private fun nativeLogLevelName(level: Int): String? {
         4 -> "error"
         5 -> "critical"
         else -> null
+    }
+}
+
+/**
+ * Liste large des IPv4 locales affichables lorsque le serveur écoute sur
+ * 0.0.0.0 ("Toutes").
+ *
+ * Cette fonction ne sert JAMAIS à choisir l'interface de bind. La sélection
+ * VPN / Wi-Fi / Ethernet repose exclusivement sur NetworkInterfaceResolver et
+ * NetworkCapabilities. Ici on conserve seulement le comportement historique
+ * d'affichage, notamment pour USB tethering / RNDIS et certaines interfaces
+ * locales non représentées comme Network Android sélectionnable.
+ */
+private fun getAllClientIpv4Addresses(): List<NetworkAddress> {
+    return try {
+        val candidates = mutableListOf<NetworkAddress>()
+
+        val interfaces =
+            NetworkInterface.getNetworkInterfaces()
+                ?: return emptyList()
+
+        while (interfaces.hasMoreElements()) {
+            val networkInterface = interfaces.nextElement()
+
+            if (
+                networkInterface.isLoopback ||
+                !networkInterface.isUp
+            ) {
+                continue
+            }
+
+            val interfaceName =
+                networkInterface.name
+                    ?.takeIf { it.isNotBlank() }
+                    ?: continue
+
+            val lowerName =
+                interfaceName.lowercase(Locale.ROOT)
+
+            /*
+             * Conserver les exclusions historiques d'interfaces Android
+             * internes / traduction IPv4 / mobile qui ne sont pas utiles comme
+             * adresse USB/IP à présenter au client.
+             */
+            if (
+                lowerName.startsWith("clat") ||
+                lowerName.startsWith("v4-") ||
+                lowerName.startsWith("dummy") ||
+                lowerName.startsWith("sit") ||
+                lowerName.startsWith("ip6tnl") ||
+                lowerName.startsWith("rmnet")
+            ) {
+                continue
+            }
+
+            val priority = when {
+                lowerName.startsWith("wg") ||
+                    lowerName.startsWith("tun") ||
+                    lowerName.startsWith("vpn") -> 0
+
+                lowerName.startsWith("wlan") ||
+                    lowerName.startsWith("swlan") -> 1
+
+                lowerName.startsWith("eth") ||
+                    lowerName.startsWith("en") -> 2
+
+                lowerName.startsWith("rndis") ||
+                    lowerName.startsWith("usb") -> 3
+
+                else -> 10
+            }
+
+            val addresses = networkInterface.inetAddresses
+
+            while (addresses.hasMoreElements()) {
+                val address = addresses.nextElement()
+                val host = address.hostAddress ?: continue
+
+                if (
+                    address !is Inet4Address ||
+                    address.isLoopbackAddress ||
+                    address.isLinkLocalAddress ||
+                    host.startsWith("192.0.0.")
+                ) {
+                    continue
+                }
+
+                candidates += NetworkAddress(
+                    interfaceName = interfaceName,
+                    address = host,
+                    priority = priority
+                )
+            }
+        }
+
+        candidates
+            .distinctBy { it.address }
+            .sortedWith(
+                compareBy<NetworkAddress> { it.priority }
+                    .thenBy { it.interfaceName }
+            )
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to get client IPv4 addresses", e)
+        emptyList()
     }
 }
 
@@ -475,6 +583,9 @@ fun MainScreen(
     }
     var availableListenAddresses by remember {
         mutableStateOf<List<ListenAddressOption>>(emptyList())
+    }
+    var allClientIpAddresses by remember {
+        mutableStateOf<List<NetworkAddress>>(emptyList())
     }
 
     val selectedListenType = remember(selectedListenTypeName) {
@@ -865,6 +976,11 @@ fun MainScreen(
             availableListenAddresses =
                 NetworkInterfaceResolver.getAvailableAddresses(context)
 
+            allClientIpAddresses =
+                withContext(Dispatchers.IO) {
+                    getAllClientIpv4Addresses()
+                }
+
             delay(2000)
         }
     }
@@ -991,7 +1107,7 @@ fun MainScreen(
                 boundDevices = emptySet()
 
                 addLog(
-                    message = "Listening interface unavailable; USB/IP server stopped",
+                    message = "USB/IP server stopped",
                     level = 3
                 )
 
@@ -1008,8 +1124,10 @@ fun MainScreen(
 
     /*
      * Adresses réellement utiles au client :
-     * - mode ALL : toutes les IPv4 VPN/Wi-Fi/Ethernet détectées ;
-     * - mode ciblé : uniquement l'adresse sur laquelle le socket est lié.
+     * - mode ALL : conserver la liste large historique des IPv4 locales
+     *   affichables (VPN, Wi-Fi, Ethernet, USB/RNDIS, etc.) ;
+     * - mode ciblé : afficher uniquement l'adresse sur laquelle le socket
+     *   natif est réellement lié.
      */
     val statusIpAddresses =
         if (!serverRunning) {
@@ -1019,52 +1137,46 @@ fun MainScreen(
                 usbService?.listenAddress
                     ?: selectedListenAddress
 
-            val options =
-                if (
-                    activeAddress ==
-                    NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
-                ) {
-                    availableListenAddresses.filter {
-                        it.type != ListenInterfaceType.ALL
-                    }
-                } else {
-                    availableListenAddresses.filter {
-                        it.address == activeAddress
-                    }
-                }
+            if (
+                activeAddress ==
+                NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
+            ) {
+                allClientIpAddresses
+            } else {
+                availableListenAddresses
+                    .filter { it.address == activeAddress }
+                    .map { option ->
+                        val priority = when (option.type) {
+                            ListenInterfaceType.VPN -> 0
+                            ListenInterfaceType.WIFI -> 1
+                            ListenInterfaceType.ETHERNET -> 2
+                            ListenInterfaceType.ALL -> 10
+                        }
 
-            options
-                .map { option ->
-                    val priority = when (option.type) {
-                        ListenInterfaceType.VPN -> 0
-                        ListenInterfaceType.WIFI -> 1
-                        ListenInterfaceType.ETHERNET -> 2
-                        ListenInterfaceType.ALL -> 10
-                    }
+                        val typeLabel =
+                            listenInterfaceTypeLabel(
+                                context,
+                                option.type
+                            )
 
-                    val typeLabel =
-                        listenInterfaceTypeLabel(
-                            context,
-                            option.type
+                        val interfaceLabel =
+                            option.interfaceName
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { "$typeLabel • $it" }
+                                ?: typeLabel
+
+                        NetworkAddress(
+                            interfaceName = interfaceLabel,
+                            address = option.address,
+                            priority = priority
                         )
-
-                    val interfaceLabel =
-                        option.interfaceName
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let { "$typeLabel • $it" }
-                            ?: typeLabel
-
-                    NetworkAddress(
-                        interfaceName = interfaceLabel,
-                        address = option.address,
-                        priority = priority
+                    }
+                    .distinctBy { it.address }
+                    .sortedWith(
+                        compareBy<NetworkAddress> { it.priority }
+                            .thenBy { it.interfaceName }
                     )
-                }
-                .distinctBy { it.address }
-                .sortedWith(
-                    compareBy<NetworkAddress> { it.priority }
-                        .thenBy { it.interfaceName }
-                )
+            }
         }
 
     // 设置native日志回调
