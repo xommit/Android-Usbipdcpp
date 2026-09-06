@@ -67,6 +67,12 @@ private const val TAG = "MainActivity"
 private const val CAMERA_ACTION_AUTHORIZE = "authorize"
 private const val CAMERA_ACTION_BIND = "bind"
 
+/*
+ * USB-IF class code for Billboard devices.
+ * Android UsbConstants does not expose a dedicated Billboard constant.
+ */
+private const val USB_CLASS_BILLBOARD = 0x11
+
 data class NetworkAddress(
     val interfaceName: String,
     val address: String,
@@ -263,6 +269,48 @@ fun isCameraDevice(device: UsbDevice): Boolean {
     }
 
     return false
+}
+
+/*
+ * Certains périphériques déclarent leur classe au niveau du Device
+ * Descriptor, d'autres au niveau d'une interface. Vérifier les deux évite
+ * d'avoir besoin d'une liste VID/PID maintenue manuellement.
+ */
+private fun hasUsbClass(
+    device: UsbDevice,
+    usbClass: Int
+): Boolean {
+    if (device.deviceClass == usbClass) {
+        return true
+    }
+
+    for (i in 0 until device.interfaceCount) {
+        if (device.getInterface(i).interfaceClass == usbClass) {
+            return true
+        }
+    }
+
+    return false
+}
+
+fun isUsbHubDevice(device: UsbDevice): Boolean {
+    return hasUsbClass(
+        device,
+        UsbConstants.USB_CLASS_HUB
+    )
+}
+
+fun isUsbBillboardDevice(device: UsbDevice): Boolean {
+    return hasUsbClass(
+        device,
+        USB_CLASS_BILLBOARD
+    )
+}
+
+fun isNonShareableUsbDevice(device: UsbDevice): Boolean {
+    return isUsbHubDevice(device) ||
+        isUsbBillboardDevice(device) ||
+        UsbDeviceBlacklist.isBlacklisted(device)
 }
 
 fun setLanguage(language: String) {
@@ -1167,6 +1215,16 @@ fun MainScreen(
                                 },
                                 onAuthorizeDevice = { device ->
                                     /*
+                                     * Les hubs USB et périphériques Billboard
+                                     * sont détectés par leur classe USB
+                                     * standard et ne doivent pas être
+                                     * proposés au partage USB/IP.
+                                     */
+                                    if (isNonShareableUsbDevice(device)) {
+                                        return@DeviceListSection
+                                    }
+
+                                    /*
                                      * Autoriser est indépendant du serveur :
                                      * l'utilisateur peut préparer l'accès USB
                                      * avant de démarrer USB/IP.
@@ -1181,6 +1239,10 @@ fun MainScreen(
                                     }
                                 },
                                 onBindDevice = { device ->
+                                    if (isNonShareableUsbDevice(device)) {
+                                        return@DeviceListSection
+                                    }
+
                                     if (!serverRunning) {
                                         Toast.makeText(
                                             context,
@@ -2044,7 +2106,8 @@ fun ColumnScope.DeviceListSection(
                             canBind =
                                 serverRunning &&
                                 hasUsbPermission &&
-                                !isBound,
+                                !isBound &&
+                                !isNonShareableUsbDevice(device),
                             onAuthorize = {
                                 onAuthorizeDevice(
                                     device
@@ -2081,6 +2144,15 @@ fun DeviceItem(
     onBind: () -> Unit,
     onUnbind: () -> Unit
 ) {
+    val isUsbHub = isUsbHubDevice(device)
+    val isUsbBillboard = isUsbBillboardDevice(device)
+    val blacklistEntry = UsbDeviceBlacklist.find(device)
+    val isBlacklisted = blacklistEntry != null
+    val isNonShareable =
+        isUsbHub ||
+        isUsbBillboard ||
+        isBlacklisted
+
     Row(
         modifier =
             Modifier
@@ -2133,28 +2205,77 @@ fun DeviceItem(
             )
 
             /*
-             * État explicite de la permission USB Android.
+             * Les hubs et Billboard restent visibles pour informer
+             * l'utilisateur, mais ils ne sont pas proposés au partage.
+             * Pour les autres périphériques, afficher l'état de permission.
              */
             Text(
                 text =
-                    if (hasUsbPermission) {
-                        stringResource(
-                            R.string.usb_permission_granted
-                        )
-                    } else {
-                        stringResource(
-                            R.string.usb_permission_required
-                        )
+                    when {
+                        isUsbHub -> {
+                            stringResource(
+                                R.string.usb_hub_not_shareable
+                            )
+                        }
+
+                        isUsbBillboard -> {
+                            stringResource(
+                                R.string.usb_billboard_not_shareable
+                            )
+                        }
+
+                        isBlacklisted -> {
+                            stringResource(
+                                R.string.usb_blacklisted_not_shareable
+                            )
+                        }
+
+                        hasUsbPermission -> {
+                            stringResource(
+                                R.string.usb_permission_granted
+                            )
+                        }
+
+                        else -> {
+                            stringResource(
+                                R.string.usb_permission_required
+                            )
+                        }
                     },
                 style =
                     MaterialTheme.typography.bodySmall,
                 color =
-                    if (hasUsbPermission) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.error
+                    when {
+                        isNonShareable -> {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+
+                        hasUsbPermission -> {
+                            MaterialTheme.colorScheme.primary
+                        }
+
+                        else -> {
+                            MaterialTheme.colorScheme.error
+                        }
                     }
             )
+
+            if (
+                isBlacklisted &&
+                blacklistEntry?.reason?.isNotBlank() == true
+            ) {
+                Text(
+                    text =
+                        blacklistEntry.reason,
+                    style =
+                        MaterialTheme.typography.bodySmall,
+                    color =
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow =
+                        TextOverflow.Ellipsis
+                )
+            }
 
             if (busid != null) {
                 Text(
@@ -2176,17 +2297,10 @@ fun DeviceItem(
         )
 
         when {
-            isBusy || isPermissionPending -> {
-                CircularProgressIndicator(
-                    modifier =
-                        Modifier.size(
-                            24.dp
-                        ),
-                    strokeWidth =
-                        2.dp
-                )
-            }
-
+            /*
+             * Si un périphérique de cette classe avait été associé par une
+             * ancienne version, conserver la possibilité de le dissocier.
+             */
             isBound -> {
                 TextButton(
                     onClick =
@@ -2206,6 +2320,21 @@ fun DeviceItem(
                             MaterialTheme.colorScheme.error
                     )
                 }
+            }
+
+            isNonShareable -> {
+                // Aucun bouton : le statut explique pourquoi.
+            }
+
+            isBusy || isPermissionPending -> {
+                CircularProgressIndicator(
+                    modifier =
+                        Modifier.size(
+                            24.dp
+                        ),
+                    strokeWidth =
+                        2.dp
+                )
             }
 
             !hasUsbPermission -> {
