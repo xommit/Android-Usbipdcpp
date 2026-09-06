@@ -326,9 +326,17 @@ private fun listenInterfaceTypeLabel(
 
 private fun listenInterfaceFieldLabel(context: Context): String {
     return when (networkUiLanguage(context)) {
-        "fr" -> "Interface d'écoute"
-        "zh" -> "监听接口"
-        else -> "Listen interface"
+        "fr" -> "Interface réseau du serveur"
+        "zh" -> "服务器网络接口"
+        else -> "Server network interface"
+    }
+}
+
+private fun allInterfacesLabel(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Toutes les interfaces (0.0.0.0)"
+        "zh" -> "所有接口 (0.0.0.0)"
+        else -> "All interfaces (0.0.0.0)"
     }
 }
 
@@ -1859,7 +1867,7 @@ fun ServerControlPanel(
             ) {
                 Text(
                     text = listenInterfaceFieldLabel(context),
-                    style = MaterialTheme.typography.labelMedium
+                    style = MaterialTheme.typography.titleSmall
                 )
 
                 val canChangeListenInterface =
@@ -1906,11 +1914,8 @@ fun ServerControlPanel(
                         Spacer(modifier = Modifier.width(6.dp))
 
                         Text(
-                            text = listenInterfaceTypeLabel(
-                                context,
-                                ListenInterfaceType.ALL
-                            ),
-                            style = MaterialTheme.typography.bodyLarge
+                            text = allInterfacesLabel(context),
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
@@ -1966,7 +1971,7 @@ fun ServerControlPanel(
                                 Text(
                                     text = noListenAddressText(context),
                                     style =
-                                        MaterialTheme.typography.bodySmall,
+                                        MaterialTheme.typography.bodyMedium,
                                     color =
                                         MaterialTheme.colorScheme
                                             .onSurfaceVariant
@@ -2042,63 +2047,55 @@ fun ServerControlPanel(
                 }
             }
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor =
-                        MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = 16.dp,
-                            vertical = 12.dp
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement =
-                        Arrangement.spacedBy(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.port),
-                            style =
-                                MaterialTheme.typography.titleSmall
-                        )
-
-                        Text(
-                            text = "TCP",
-                            style =
-                                MaterialTheme.typography.bodySmall,
-                            color =
-                                MaterialTheme.colorScheme
-                                    .onSurfaceVariant
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = portText,
-                        onValueChange = {
-                            onPortChange(
-                                it.filter { c -> c.isDigit() }
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number
-                        ),
-                        modifier = Modifier.width(128.dp),
-                        enabled =
-                            !serverRunning &&
-                                !isStarting &&
-                                !isStopping,
-                        singleLine = true,
-                        textStyle =
-                            MaterialTheme.typography.titleMedium
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        MaterialTheme.colorScheme.outlineVariant
                     )
-                }
+            )
+
+            val portEditable =
+                !serverRunning &&
+                    !isStarting &&
+                    !isStopping
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Text(
+                    text = "${stringResource(R.string.port)} TCP",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (portEditable) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                OutlinedTextField(
+                    value = portText,
+                    onValueChange = {
+                        onPortChange(
+                            it.filter { c -> c.isDigit() }
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                    ),
+                    modifier = Modifier.width(120.dp),
+                    enabled = portEditable,
+                    singleLine = true,
+                    textStyle =
+                        MaterialTheme.typography.bodyMedium
+                )
             }
         }
     }
