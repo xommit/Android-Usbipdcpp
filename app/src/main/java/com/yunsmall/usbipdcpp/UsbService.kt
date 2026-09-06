@@ -43,8 +43,15 @@ class UsbService : Service() {
     @Volatile
     var serverRunning = false
         private set
+
     @Volatile
     var port = 3240
+        private set
+
+    // Adresse IPv4 réellement utilisée par le serveur natif.
+    // 0.0.0.0 conserve le comportement historique : écoute sur toutes les interfaces.
+    @Volatile
+    var listenAddress = "0.0.0.0"
         private set
 
     val boundDeviceNames: Set<String>
@@ -134,13 +141,30 @@ class UsbService : Service() {
         }.start()
     }
 
+    /**
+     * Compatibilité avec l'ancien appel : écoute sur toutes les interfaces IPv4.
+     */
     suspend fun startServer(port: Int): Boolean {
+        return startServer(port, "0.0.0.0")
+    }
+
+    /**
+     * Démarre le serveur USB/IP sur une adresse IPv4 locale précise.
+     *
+     * 0.0.0.0 conserve le comportement historique et écoute sur toutes les interfaces.
+     */
+    suspend fun startServer(port: Int, listenAddress: String): Boolean {
         if (serverRunning) return true
 
+        val normalizedAddress = listenAddress
+            .trim()
+            .ifEmpty { "0.0.0.0" }
+
         return withContext(UsbIpNative.nativeDispatcher) {
-            val success = UsbIpNative.startServer(port)
+            val success = UsbIpNative.startServer(port, normalizedAddress)
             if (success) {
                 this@UsbService.port = port
+                this@UsbService.listenAddress = normalizedAddress
                 serverRunning = true
                 updateNotification()
             }
