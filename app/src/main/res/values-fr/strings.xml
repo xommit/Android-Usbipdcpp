@@ -25,6 +25,9 @@
     <string name="authorize">Autoriser</string>
     <string name="usb_permission_granted">Permission USB accordée</string>
     <string name="usb_permission_required">Permission USB requise</string>
+    <string name="usb_hub_not_shareable">Hub USB — non partageable</string>
+    <string name="usb_billboard_not_shareable">Périphérique USB Billboard — non partageable</string>
+    <string name="usb_blacklisted_not_shareable">Périphérique USB incompatible connu — non partageable</string>
     <string name="bind">Associer</string>
     <string name="unbind">Dissocier</string>
     <string name="unknown_device">Périphérique inconnu</string>
