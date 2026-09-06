@@ -873,11 +873,10 @@ fun MainScreen(
                         R.string.unknown_device
                     )
 
+            // Message canonique : la traduction reste centralisée
+            // dans LogLocalizer.kt.
             addLog(
-                message = context.getString(
-                    R.string.usb_permission_requested_log,
-                    deviceName
-                ),
+                message = "USB permission requested for $deviceName",
                 level = 2
             )
         }
@@ -902,19 +901,15 @@ fun MainScreen(
                     )
 
             if (granted) {
+                // Message canonique : traduit ensuite par LogLocalizer.kt.
                 addLog(
-                    message = context.getString(
-                        R.string.usb_permission_granted_log,
-                        deviceName
-                    ),
+                    message = "USB permission granted for $deviceName",
                     level = 2
                 )
             } else {
+                // Message canonique : traduit ensuite par LogLocalizer.kt.
                 addLog(
-                    message = context.getString(
-                        R.string.usb_permission_denied_log,
-                        deviceName
-                    ),
+                    message = "USB permission denied for $deviceName",
                     level = 3
                 )
             }
