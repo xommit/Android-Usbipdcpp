@@ -29,6 +29,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -117,7 +119,9 @@ class MainActivity : AppCompatActivity() {
         setContent {
             UsbipdcppTheme {
                 // 用 State 观察 Service 变化
-                var serviceState by remember { mutableStateOf(Pair<UsbService?, Boolean>(null, false)) }
+                var serviceState by remember {
+                    mutableStateOf(Pair<UsbService?, Boolean>(null, false))
+                }
 
                 DisposableEffect(Unit) {
                     onServiceStateChanged = {
@@ -135,7 +139,9 @@ class MainActivity : AppCompatActivity() {
                     permissionManager = permissionManager,
                     usbService = serviceState.first,
                     serviceBound = serviceState.second,
-                    onRefreshCallbackReady = { callback -> refreshDevicesCallback = callback }
+                    onRefreshCallbackReady = { callback ->
+                        refreshDevicesCallback = callback
+                    }
                 )
             }
         }
@@ -173,7 +179,9 @@ class MainActivity : AppCompatActivity() {
 
 fun isCameraDevice(device: UsbDevice): Boolean {
     for (i in 0 until device.interfaceCount) {
-        if (device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_VIDEO) return true
+        if (device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_VIDEO) {
+            return true
+        }
     }
     return false
 }
@@ -207,13 +215,26 @@ fun MainScreen(
     var showLanguageMenu by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var busyDevices by remember { mutableStateOf(setOf<String>()) }
+
     // 存设备名而非 UsbDevice 对象（非 Parcelable 无法存 SavedState）：
     // 权限对话框期间系统回收 Activity（如"不保留活动"）后重建时，
     // remember 状态会丢，rememberSaveable 保证授权回调仍能找到待绑定设备
-    var pendingBindDeviceName by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingBindDeviceName by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
 
     val scope = rememberCoroutineScope()
+
+    // 两页：
+    // 0 = 服务器 / USB 设备
+    // 1 = 日志
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { 2 }
+    )
+
     val context = LocalContext.current
+
     // performBind 会被 rememberLauncherForActivityResult 的回调长期持有（首次组合
     // 的实例），必须经 rememberUpdatedState 读最新 usbService，否则授权后拿到
     // 的是服务绑定前的 null 快照，绑定必然失败
@@ -222,31 +243,59 @@ fun MainScreen(
     // 执行设备绑定（USB 权限 + native 绑定）
     fun performBind(device: UsbDevice) {
         val service = currentUsbService ?: run {
-            Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.service_not_ready),
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
+
         // native 初始化失败时绑定无意义，明确提示而非等 native 返回模糊错误
         if (!service.nativeReady) {
-            Toast.makeText(context, context.getString(R.string.native_init_failed), Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.native_init_failed),
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
+
         val deviceName = device.productName?.takeIf { it.isNotEmpty() }
             ?: context.getString(R.string.unknown_device)
+
         val accepted = permissionManager.requestPermission(device) { _, granted ->
             if (granted) {
                 scope.launch {
                     busyDevices = busyDevices + device.deviceName
                     try {
                         val result = service.bindDevice(usbManager, device)
+
                         // 用局部 service 刷新：绑定期间 Activity 重建可能更换
                         // usbService 引用，用外部变量会读到不一致的状态
                         boundDevices = service.boundDeviceNames
+
                         when (result) {
                             is DeviceBindResult.Success -> {
-                                Toast.makeText(context, context.getString(R.string.bind_success, deviceName), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.bind_success,
+                                        deviceName
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
+
                             is DeviceBindResult.Failure -> {
-                                Toast.makeText(context, context.getString(R.string.bind_failed, result.getMessage(context)), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.bind_failed,
+                                        result.getMessage(context)
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     } finally {
@@ -254,12 +303,21 @@ fun MainScreen(
                     }
                 }
             } else {
-                Toast.makeText(context, context.getString(R.string.device_unavailable), Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.device_unavailable),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
+
         if (!accepted) {
             // 请求未受理：同设备已有待处理的权限请求，明确提示避免误以为无反应
-            Toast.makeText(context, context.getString(R.string.permission_request_pending), Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.permission_request_pending),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -267,19 +325,30 @@ fun MainScreen(
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        val deviceName = pendingBindDeviceName ?: return@rememberLauncherForActivityResult
+        val deviceName =
+            pendingBindDeviceName ?: return@rememberLauncherForActivityResult
+
         pendingBindDeviceName = null
+
         // Activity 重建后从设备列表重新查找设备对象
-        val device = usbManager.deviceList[deviceName] ?: return@rememberLauncherForActivityResult
+        val device =
+            usbManager.deviceList[deviceName]
+                ?: return@rememberLauncherForActivityResult
+
         if (granted) {
             performBind(device)
         } else {
-            Toast.makeText(context, context.getString(R.string.device_unavailable), Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.device_unavailable),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
     fun addLog(message: String) {
-        logMessages = logMessages + "[${java.text.SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(java.util.Date())}] $message"
+        logMessages =
+            logMessages + "[${java.text.SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(java.util.Date())}] $message"
     }
 
     fun refreshDevices() {
@@ -300,7 +369,8 @@ fun MainScreen(
     fun getDeviceIpAddresses(): List<NetworkAddress> {
         return try {
             val candidates = mutableListOf<NetworkAddress>()
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+            val interfaces =
+                NetworkInterface.getNetworkInterfaces() ?: return emptyList()
 
             while (interfaces.hasMoreElements()) {
                 val networkInterface = interfaces.nextElement()
@@ -309,9 +379,10 @@ fun MainScreen(
                     continue
                 }
 
-                val ifName = networkInterface.name
-                    ?.lowercase(Locale.getDefault())
-                    ?: continue
+                val ifName =
+                    networkInterface.name
+                        ?.lowercase(Locale.getDefault())
+                        ?: continue
 
                 // Android 内部/移动网络接口不适合作为 USB/IP 客户端地址显示。
                 if (
@@ -347,6 +418,7 @@ fun MainScreen(
                 }
 
                 val addresses = networkInterface.inetAddresses
+
                 while (addresses.hasMoreElements()) {
                     val address = addresses.nextElement()
                     val host = address.hostAddress ?: continue
@@ -372,14 +444,18 @@ fun MainScreen(
 
             candidates
                 .distinctBy { it.address }
-                .sortedWith(compareBy<NetworkAddress> { it.priority }.thenBy { it.interfaceName })
+                .sortedWith(
+                    compareBy<NetworkAddress> { it.priority }
+                        .thenBy { it.interfaceName }
+                )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get IP addresses", e)
             emptyList()
         }
     }
 
-    val ipAddresses = remember { mutableStateOf<List<NetworkAddress>>(emptyList()) }
+    val ipAddresses =
+        remember { mutableStateOf<List<NetworkAddress>>(emptyList()) }
 
     // 刷新地址：VPN 在服务器已运行时启用/禁用，也会自动更新界面。
     LaunchedEffect(serverRunning) {
@@ -389,7 +465,10 @@ fun MainScreen(
         }
 
         while (true) {
-            ipAddresses.value = withContext(Dispatchers.IO) { getDeviceIpAddresses() }
+            ipAddresses.value =
+                withContext(Dispatchers.IO) {
+                    getDeviceIpAddresses()
+                }
             delay(2000)
         }
     }
@@ -399,12 +478,17 @@ fun MainScreen(
         // onLog 由 native 日志线程回调，直接更新 Compose 状态会跨线程写，
         // 切到主线程再执行
         val mainHandler = Handler(Looper.getMainLooper())
+
         val callback = object : LogCallback {
             override fun onLog(level: Int, message: String) {
-                mainHandler.post { addLog(message.trim()) }
+                mainHandler.post {
+                    addLog(message.trim())
+                }
             }
         }
+
         UsbIpNative.setLogCallback(callback)
+
         onDispose {
             // 必须清回调：旋转重建时新 setLogCallback 会替换旧引用（无需清理），
             // 但应用退后台（Activity 销毁、不再有新回调）时不清的话，JNI 的
@@ -415,7 +499,9 @@ fun MainScreen(
 
     // Service 状态变化时刷新
     LaunchedEffect(serviceBound, usbService) {
-        onRefreshCallbackReady { refreshDevices() }
+        onRefreshCallbackReady {
+            refreshDevices()
+        }
         refreshDevices()
         refreshState()
     }
@@ -423,22 +509,38 @@ fun MainScreen(
     // 监听USB设备插入/拔出（通过BroadcastReceiver）
     // 用 rememberUpdatedState 确保 lambda 始终读取最新值，不会被 DisposableEffect 捕获旧引用
     val currentService by rememberUpdatedState(usbService)
+
     DisposableEffect(permissionManager) {
         permissionManager.setOnDeviceAttachedListener {
             refreshDevices()
         }
+
         permissionManager.setOnDeviceDetachedListener { device ->
             scope.launch {
                 val service = currentService
-                val wasBound = service?.handleDeviceDetached(device.deviceName) ?: false
-                boundDevices = service?.boundDeviceNames ?: emptySet()
+                val wasBound =
+                    service?.handleDeviceDetached(device.deviceName) ?: false
+
+                boundDevices =
+                    service?.boundDeviceNames ?: emptySet()
+
                 if (wasBound) {
-                    val deviceName = device.productName?.takeIf { it.isNotEmpty() }
-                        ?: context.getString(R.string.unknown_device)
-                    Toast.makeText(context, context.getString(R.string.device_detached, deviceName), Toast.LENGTH_SHORT).show()
+                    val deviceName =
+                        device.productName?.takeIf { it.isNotEmpty() }
+                            ?: context.getString(R.string.unknown_device)
+
+                    Toast.makeText(
+                        context,
+                        context.getString(
+                            R.string.device_detached,
+                            deviceName
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
+
         onDispose {
             permissionManager.setOnDeviceAttachedListener(null)
             permissionManager.setOnDeviceDetachedListener(null)
@@ -449,38 +551,73 @@ fun MainScreen(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.app_title)) },
+                title = {
+                    Text(stringResource(R.string.app_title))
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor =
+                        MaterialTheme.colorScheme.primaryContainer
                 ),
                 actions = {
-                    TextButton(onClick = { showAbout = true }) {
+                    TextButton(
+                        onClick = {
+                            showAbout = true
+                        }
+                    ) {
                         Text(stringResource(R.string.about))
                     }
+
                     Box {
-                        TextButton(onClick = { showLanguageMenu = true }) {
+                        TextButton(
+                            onClick = {
+                                showLanguageMenu = true
+                            }
+                        ) {
                             Text(stringResource(R.string.language))
                         }
+
                         DropdownMenu(
                             expanded = showLanguageMenu,
-                            onDismissRequest = { showLanguageMenu = false }
+                            onDismissRequest = {
+                                showLanguageMenu = false
+                            }
                         ) {
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.language_en)) },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.language_en
+                                        )
+                                    )
+                                },
                                 onClick = {
                                     setLanguage("en")
                                     showLanguageMenu = false
                                 }
                             )
+
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.language_fr)) },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.language_fr
+                                        )
+                                    )
+                                },
                                 onClick = {
                                     setLanguage("fr")
                                     showLanguageMenu = false
                                 }
                             )
+
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.language_zh)) },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.language_zh
+                                        )
+                                    )
+                                },
                                 onClick = {
                                     setLanguage("zh")
                                     showLanguageMenu = false
@@ -492,132 +629,332 @@ fun MainScreen(
             )
         }
     ) { innerPadding ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ServerControlPanel(
-                serverRunning = serverRunning,
-                isStarting = isStarting,
-                isStopping = isStopping,
-                portText = portText,
-                onPortChange = { portText = it },
-                onStart = {
-                    val port = portText.toIntOrNull() ?: 3240
-                    val service = usbService
-                    if (service == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@ServerControlPanel
-                    }
-                    // native 初始化失败时无法启动服务器，明确提示
-                    if (!service.nativeReady) {
-                        Toast.makeText(context, context.getString(R.string.native_init_failed), Toast.LENGTH_SHORT).show()
-                        return@ServerControlPanel
-                    }
-                    isStarting = true
-                    scope.launch {
-                        val success = service.startServer(port)
-                        isStarting = false
-                        if (success) {
-                            serverRunning = true
+
+            /*
+             * 页面主体
+             *
+             * 0 = USB/IP 服务器
+             * 1 = 日志
+             *
+             * HorizontalPager 允许左右滑动切换页面。
+             */
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) { page ->
+
+                when (page) {
+
+                    /*
+                     * PAGE 1
+                     * USB/IP server + devices
+                     */
+                    0 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                ),
+                            verticalArrangement =
+                                Arrangement.spacedBy(16.dp)
+                        ) {
+                            ServerControlPanel(
+                                serverRunning = serverRunning,
+                                isStarting = isStarting,
+                                isStopping = isStopping,
+                                portText = portText,
+                                onPortChange = {
+                                    portText = it
+                                },
+                                onStart = {
+                                    val port =
+                                        portText.toIntOrNull() ?: 3240
+                                    val service = usbService
+
+                                    if (service == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.service_not_ready
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerControlPanel
+                                    }
+
+                                    // native 初始化失败时无法启动服务器，明确提示
+                                    if (!service.nativeReady) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.native_init_failed
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerControlPanel
+                                    }
+
+                                    isStarting = true
+
+                                    scope.launch {
+                                        val success =
+                                            service.startServer(port)
+
+                                        isStarting = false
+
+                                        if (success) {
+                                            serverRunning = true
+                                        }
+                                    }
+                                },
+                                onStop = {
+                                    val service = usbService
+
+                                    if (service == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.service_not_ready
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerControlPanel
+                                    }
+
+                                    isStopping = true
+
+                                    scope.launch {
+                                        service.stopServer()
+                                        isStopping = false
+                                        serverRunning = false
+                                        boundDevices = emptySet()
+                                    }
+                                }
+                            )
+
+                            StatusCard(
+                                serverRunning = serverRunning,
+                                boundCount = boundDevices.size,
+                                ipAddresses = ipAddresses.value,
+                                port =
+                                    portText.toIntOrNull() ?: 3240
+                            )
+
+                            DeviceListSection(
+                                devices = devices,
+                                boundDevices = boundDevices,
+                                busyDevices = busyDevices,
+                                serverRunning = serverRunning,
+                                getBusid = {
+                                    usbService?.getBusid(it)
+                                },
+                                onBindDevice = { device ->
+                                    if (!serverRunning) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.please_start_server
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@DeviceListSection
+                                    }
+
+                                    if (usbService == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.service_not_ready
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@DeviceListSection
+                                    }
+
+                                    // 摄像头设备需要先获取 CAMERA 权限
+                                    if (
+                                        isCameraDevice(device) &&
+                                        ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.CAMERA
+                                        ) != PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        if (pendingBindDeviceName != null) {
+                                            // 已有待处理请求（权限对话框未完成），忽略新的，
+                                            // 防止 pendingBindDeviceName 被覆盖导致授权后绑错设备
+                                            return@DeviceListSection
+                                        }
+
+                                        pendingBindDeviceName =
+                                            device.deviceName
+
+                                        cameraPermissionLauncher.launch(
+                                            Manifest.permission.CAMERA
+                                        )
+                                    } else {
+                                        performBind(device)
+                                    }
+                                },
+                                onUnbindDevice = { device ->
+                                    val service = usbService
+
+                                    if (service == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.service_not_ready
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@DeviceListSection
+                                    }
+
+                                    val deviceName =
+                                        device.productName
+                                            ?.takeIf {
+                                                it.isNotEmpty()
+                                            }
+                                            ?: context.getString(
+                                                R.string.unknown_device
+                                            )
+
+                                    scope.launch {
+                                        busyDevices =
+                                            busyDevices + device.deviceName
+
+                                        try {
+                                            val result =
+                                                service.unbindDevice(
+                                                    device.deviceName
+                                                )
+
+                                            // 无论成功失败都刷新，确保 UI 与 Service 状态一致
+                                            boundDevices =
+                                                service.boundDeviceNames
+
+                                            when (result) {
+                                                is DeviceUnbindResult.Success -> {
+                                                    Toast.makeText(
+                                                        context,
+                                                        context.getString(
+                                                            R.string.unbind_success,
+                                                            deviceName
+                                                        ),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+
+                                                is DeviceUnbindResult.Failure -> {
+                                                    Toast.makeText(
+                                                        context,
+                                                        context.getString(
+                                                            R.string.unbind_failed,
+                                                            result.getMessage(
+                                                                context
+                                                            )
+                                                        ),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            }
+                                        } finally {
+                                            busyDevices =
+                                                busyDevices - device.deviceName
+                                        }
+                                    }
+                                },
+                                onRefresh = {
+                                    refreshDevices()
+                                }
+                            )
                         }
                     }
-                },
-                onStop = {
-                    val service = usbService
-                    if (service == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@ServerControlPanel
-                    }
-                    isStopping = true
-                    scope.launch {
-                        service.stopServer()
-                        isStopping = false
-                        serverRunning = false
-                        boundDevices = emptySet()
+
+                    /*
+                     * PAGE 2
+                     * Journal
+                     */
+                    1 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                )
+                        ) {
+                            LogSection(
+                                logMessages = logMessages,
+                                onClear = {
+                                    logMessages = emptyList()
+                                },
+                                onViewFullLog = {
+                                    showFullLog = true
+                                },
+                                onCopyLog = {
+                                    val clipboard =
+                                        context.getSystemService(
+                                            Context.CLIPBOARD_SERVICE
+                                        ) as ClipboardManager
+
+                                    clipboard.setPrimaryClip(
+                                        ClipData.newPlainText(
+                                            "Log",
+                                            logMessages.joinToString(
+                                                "\n"
+                                            )
+                                        )
+                                    )
+
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(
+                                            R.string.log_copied
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            )
+                        }
                     }
                 }
-            )
+            }
 
-            StatusCard(
-                serverRunning = serverRunning,
-                boundCount = boundDevices.size,
-                ipAddresses = ipAddresses.value,
-                port = portText.toIntOrNull() ?: 3240
-            )
-
-            DeviceListSection(
-                devices = devices,
-                boundDevices = boundDevices,
-                busyDevices = busyDevices,
-                serverRunning = serverRunning,
-                getBusid = { usbService?.getBusid(it) },
-                onBindDevice = { device ->
-                    if (!serverRunning) {
-                        Toast.makeText(context, context.getString(R.string.please_start_server), Toast.LENGTH_SHORT).show()
-                        return@DeviceListSection
-                    }
-                    if (usbService == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@DeviceListSection
-                    }
-                    // 摄像头设备需要先获取 CAMERA 权限
-                    if (isCameraDevice(device) &&
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        if (pendingBindDeviceName != null) {
-                            // 已有待处理请求（权限对话框未完成），忽略新的，
-                            // 防止 pendingBindDeviceName 被覆盖导致授权后绑错设备
-                            return@DeviceListSection
-                        }
-                        pendingBindDeviceName = device.deviceName
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    } else {
-                        performBind(device)
-                    }
-                },
-                onUnbindDevice = { device ->
-                    val service = usbService
-                    if (service == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@DeviceListSection
-                    }
-                    val deviceName = device.productName?.takeIf { it.isNotEmpty() }
-                        ?: context.getString(R.string.unknown_device)
+            /*
+             * Indicateur de page fixe en bas.
+             *
+             * On peut :
+             * - glisser horizontalement entre les pages ;
+             * - appuyer directement sur une bulle.
+             */
+            PageIndicator(
+                pageCount = 2,
+                currentPage = pagerState.currentPage,
+                onPageSelected = { page ->
                     scope.launch {
-                        busyDevices = busyDevices + device.deviceName
-                        try {
-                            val result = service.unbindDevice(device.deviceName)
-                            // 无论成功失败都刷新，确保 UI 与 Service 状态一致
-                            boundDevices = service.boundDeviceNames
-                            when (result) {
-                                is DeviceUnbindResult.Success -> {
-                                    Toast.makeText(context, context.getString(R.string.unbind_success, deviceName), Toast.LENGTH_SHORT).show()
-                                }
-                                is DeviceUnbindResult.Failure -> {
-                                    Toast.makeText(context, context.getString(R.string.unbind_failed, result.getMessage(context)), Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } finally {
-                            busyDevices = busyDevices - device.deviceName
-                        }
+                        pagerState.animateScrollToPage(page)
                     }
                 },
-                onRefresh = { refreshDevices() }
-            )
-
-            LogSection(
-                logMessages = logMessages,
-                onClear = { logMessages = emptyList() },
-                onViewFullLog = { showFullLog = true },
-                onCopyLog = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Log", logMessages.joinToString("\n")))
-                    Toast.makeText(context, context.getString(R.string.log_copied), Toast.LENGTH_SHORT).show()
-                }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        top = 2.dp,
+                        bottom = 8.dp
+                    )
             )
         }
     }
@@ -625,45 +962,135 @@ fun MainScreen(
     if (showFullLog) {
         FullLogDialog(
             logMessages = logMessages,
-            onDismiss = { showFullLog = false }
+            onDismiss = {
+                showFullLog = false
+            }
         )
     }
 
     if (showAbout) {
         // 当前包名查不到自己的信息理论上不可能，但规范上还是防御一下
-        val version = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get package info", e)
-            "unknown"
-        }
-        val githubUrl = "https://github.com/yunsmall/Android-Usbipdcpp"
+        val version =
+            try {
+                context.packageManager
+                    .getPackageInfo(context.packageName, 0)
+                    .versionName ?: "unknown"
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get package info", e)
+                "unknown"
+            }
+
+        val githubUrl =
+            "https://github.com/yunsmall/Android-Usbipdcpp"
+
         AlertDialog(
-            onDismissRequest = { showAbout = false },
-            title = { Text(stringResource(R.string.about_title)) },
+            onDismissRequest = {
+                showAbout = false
+            },
+            title = {
+                Text(stringResource(R.string.about_title))
+            },
             text = {
                 Column {
-                    Text(stringResource(R.string.about_description))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(stringResource(R.string.about_version, version))
-                    Text(stringResource(R.string.about_license))
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        stringResource(
+                            R.string.about_description
+                        )
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        stringResource(
+                            R.string.about_version,
+                            version
+                        )
+                    )
+
+                    Text(
+                        stringResource(
+                            R.string.about_license
+                        )
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
                     TextButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(githubUrl))
+                            val intent =
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(githubUrl)
+                                )
                             context.startActivity(intent)
                         }
                     ) {
-                        Text(stringResource(R.string.about_github), color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            stringResource(
+                                R.string.about_github
+                            ),
+                            color =
+                                MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showAbout = false }) {
+                TextButton(
+                    onClick = {
+                        showAbout = false
+                    }
+                ) {
                     Text(stringResource(R.string.close))
                 }
             }
         )
+    }
+}
+
+@Composable
+fun PageIndicator(
+    pageCount: Int,
+    currentPage: Int,
+    onPageSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(pageCount) { page ->
+            IconButton(
+                onClick = {
+                    onPageSelected(page)
+                }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(
+                            if (currentPage == page) {
+                                10.dp
+                            } else {
+                                8.dp
+                            }
+                        )
+                        .background(
+                            color =
+                                if (currentPage == page) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant
+                                },
+                            shape = RoundedCornerShape(50)
+                        )
+                )
+            }
+        }
     }
 }
 
@@ -678,77 +1105,131 @@ fun ServerControlPanel(
     onStop: () -> Unit
 ) {
     val fontScale = LocalDensity.current.fontScale
+
     val portFieldHeight = when {
         fontScale >= 1.5f -> 64.dp
         fontScale >= 1.3f -> 56.dp
         else -> 48.dp
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement =
+                Arrangement.spacedBy(12.dp)
         ) {
-            Text(stringResource(R.string.server_control), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.server_control),
+                style = MaterialTheme.typography.titleMedium
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement =
+                    Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedTextField(
                     value = portText,
-                    onValueChange = { onPortChange(it.filter { c -> c.isDigit() }) },
-                    label = { Text(stringResource(R.string.port)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    onValueChange = {
+                        onPortChange(
+                            it.filter { c ->
+                                c.isDigit()
+                            }
+                        )
+                    },
+                    label = {
+                        Text(stringResource(R.string.port))
+                    },
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType =
+                                KeyboardType.Number
+                        ),
                     modifier = Modifier
                         .width(100.dp)
                         .height(portFieldHeight),
-                    enabled = !serverRunning && !isStarting,
+                    enabled =
+                        !serverRunning && !isStarting,
                     singleLine = true
                 )
 
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(
+                    modifier = Modifier.weight(1f)
+                )
 
                 if (serverRunning || isStopping) {
                     Button(
                         onClick = onStop,
                         enabled = !isStopping,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor =
+                                    MaterialTheme.colorScheme.error
+                            )
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement =
+                                Arrangement.spacedBy(8.dp),
+                            verticalAlignment =
+                                Alignment.CenterVertically
                         ) {
                             if (isStopping) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
+                                    modifier =
+                                        Modifier.size(16.dp),
                                     strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onError
+                                    color =
+                                        MaterialTheme.colorScheme.onError
                                 )
-                                Text(stringResource(R.string.stopping))
+
+                                Text(
+                                    stringResource(
+                                        R.string.stopping
+                                    )
+                                )
                             } else {
-                                Text(stringResource(R.string.stop_server))
+                                Text(
+                                    stringResource(
+                                        R.string.stop_server
+                                    )
+                                )
                             }
                         }
                     }
                 } else {
-                    Button(onClick = onStart, enabled = !isStarting) {
+                    Button(
+                        onClick = onStart,
+                        enabled = !isStarting
+                    ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement =
+                                Arrangement.spacedBy(8.dp),
+                            verticalAlignment =
+                                Alignment.CenterVertically
                         ) {
                             if (isStarting) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
+                                    modifier =
+                                        Modifier.size(16.dp),
                                     strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
+                                    color =
+                                        MaterialTheme.colorScheme.onPrimary
                                 )
-                                Text(stringResource(R.string.starting))
+
+                                Text(
+                                    stringResource(
+                                        R.string.starting
+                                    )
+                                )
                             } else {
-                                Text(stringResource(R.string.start_server))
+                                Text(
+                                    stringResource(
+                                        R.string.start_server
+                                    )
+                                )
                             }
                         }
                     }
@@ -765,7 +1246,10 @@ fun StatusCard(
     ipAddresses: List<NetworkAddress>,
     port: Int
 ) {
-    var showCopyMenu by remember { mutableStateOf(false) }
+    var showCopyMenu by remember {
+        mutableStateOf(false)
+    }
+
     val context = LocalContext.current
 
     Box {
@@ -773,59 +1257,85 @@ fun StatusCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(
-                    enabled = serverRunning && ipAddresses.isNotEmpty()
-                ) { showCopyMenu = true },
+                    enabled =
+                        serverRunning &&
+                            ipAddresses.isNotEmpty()
+                ) {
+                    showCopyMenu = true
+                },
             colors = CardDefaults.cardColors(
-                containerColor = if (serverRunning) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                }
+                containerColor =
+                    if (serverRunning) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
             )
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
                         .size(12.dp)
                         .background(
-                            if (serverRunning) Color.Green else Color.Red,
+                            if (serverRunning) {
+                                Color.Green
+                            } else {
+                                Color.Red
+                            },
                             RoundedCornerShape(50)
                         )
                 )
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(
+                    modifier = Modifier.width(12.dp)
+                )
 
                 Column {
                     Text(
-                        text = if (serverRunning) {
-                            stringResource(R.string.server_running)
-                        } else {
-                            stringResource(R.string.server_stopped)
-                        },
-                        style = MaterialTheme.typography.titleMedium
+                        text =
+                            if (serverRunning) {
+                                stringResource(
+                                    R.string.server_running
+                                )
+                            } else {
+                                stringResource(
+                                    R.string.server_stopped
+                                )
+                            },
+                        style =
+                            MaterialTheme.typography.titleMedium
                     )
 
                     if (serverRunning) {
-                        ipAddresses.forEach { networkAddress ->
+                        ipAddresses.forEach {
+                                networkAddress ->
                             Text(
-                                text = "${networkAddress.interfaceName} • " +
-                                    stringResource(
-                                        R.string.address,
-                                        networkAddress.address,
-                                        port
-                                    ),
-                                style = MaterialTheme.typography.bodySmall
+                                text =
+                                    "${networkAddress.interfaceName} • " +
+                                        stringResource(
+                                            R.string.address,
+                                            networkAddress.address,
+                                            port
+                                        ),
+                                style =
+                                    MaterialTheme.typography.bodySmall
                             )
                         }
 
                         Text(
-                            text = stringResource(R.string.devices_bound, boundCount),
-                            style = MaterialTheme.typography.bodySmall
+                            text =
+                                stringResource(
+                                    R.string.devices_bound,
+                                    boundCount
+                                ),
+                            style =
+                                MaterialTheme.typography.bodySmall
                         )
                     }
                 }
@@ -834,12 +1344,17 @@ fun StatusCard(
 
         DropdownMenu(
             expanded = showCopyMenu,
-            onDismissRequest = { showCopyMenu = false }
+            onDismissRequest = {
+                showCopyMenu = false
+            }
         ) {
             val clipboard =
-                context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                context.getSystemService(
+                    Context.CLIPBOARD_SERVICE
+                ) as ClipboardManager
 
-            ipAddresses.forEach { networkAddress ->
+            ipAddresses.forEach {
+                    networkAddress ->
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -865,10 +1380,20 @@ fun StatusCard(
 
             if (ipAddresses.isNotEmpty()) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.copy_port, port)) },
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.copy_port,
+                                port
+                            )
+                        )
+                    },
                     onClick = {
                         clipboard.setPrimaryClip(
-                            ClipData.newPlainText("Port", port.toString())
+                            ClipData.newPlainText(
+                                "Port",
+                                port.toString()
+                            )
                         )
                         showCopyMenu = false
                     }
@@ -894,15 +1419,32 @@ fun ColumnScope.DeviceListSection(
             .fillMaxWidth()
             .weight(1.5f, fill = false)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement =
+                    Arrangement.SpaceBetween,
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.usb_devices), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onRefresh) {
-                    Text(stringResource(R.string.refresh))
+                Text(
+                    stringResource(
+                        R.string.usb_devices
+                    ),
+                    style =
+                        MaterialTheme.typography.titleMedium
+                )
+
+                TextButton(
+                    onClick = onRefresh
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.refresh
+                        )
+                    )
                 }
             }
 
@@ -911,12 +1453,17 @@ fun ColumnScope.DeviceListSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(100.dp),
-                    contentAlignment = Alignment.Center
+                    contentAlignment =
+                        Alignment.Center
                 ) {
                     Text(
-                        stringResource(R.string.no_devices),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        stringResource(
+                            R.string.no_devices
+                        ),
+                        style =
+                            MaterialTheme.typography.bodyMedium,
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
@@ -924,21 +1471,38 @@ fun ColumnScope.DeviceListSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement =
+                        Arrangement.spacedBy(8.dp)
                 ) {
-                    items(devices.entries.toList()) { entry ->
+                    items(
+                        devices.entries.toList()
+                    ) { entry ->
                         val device = entry.value
-                        val isBound = boundDevices.contains(device.deviceName)
 
-                        val busid = getBusid(device.deviceName)
+                        val isBound =
+                            boundDevices.contains(
+                                device.deviceName
+                            )
+
+                        val busid =
+                            getBusid(device.deviceName)
+
                         DeviceItem(
                             device = device,
                             isBound = isBound,
-                            isBusy = busyDevices.contains(device.deviceName),
+                            isBusy =
+                                busyDevices.contains(
+                                    device.deviceName
+                                ),
                             busid = busid,
-                            canBind = serverRunning && !isBound,
-                            onBind = { onBindDevice(device) },
-                            onUnbind = { onUnbindDevice(device) }
+                            canBind =
+                                serverRunning && !isBound,
+                            onBind = {
+                                onBindDevice(device)
+                            },
+                            onUnbind = {
+                                onUnbindDevice(device)
+                            }
                         )
                     }
                 }
@@ -961,26 +1525,47 @@ fun DeviceItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement =
+            Arrangement.SpaceBetween,
+        verticalAlignment =
+            Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
             Text(
-                text = device.productName?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_device),
-                style = MaterialTheme.typography.bodyMedium,
+                text =
+                    device.productName
+                        ?.takeIf {
+                            it.isNotEmpty()
+                        }
+                        ?: stringResource(
+                            R.string.unknown_device
+                        ),
+                style =
+                    MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow =
+                    TextOverflow.Ellipsis
             )
+
             Text(
-                text = "VID: ${device.vendorId.toString(16).uppercase()}, PID: ${device.productId.toString(16).uppercase()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text =
+                    "VID: ${device.vendorId.toString(16).uppercase()}, " +
+                        "PID: ${device.productId.toString(16).uppercase()}",
+                style =
+                    MaterialTheme.typography.bodySmall,
+                color =
+                    MaterialTheme.colorScheme.onSurfaceVariant
             )
+
             if (busid != null) {
                 Text(
                     text = "BUSID: $busid",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style =
+                        MaterialTheme.typography.bodySmall,
+                    color =
+                        MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -991,12 +1576,31 @@ fun DeviceItem(
                 strokeWidth = 2.dp
             )
         } else if (isBound) {
-            TextButton(onClick = onUnbind, modifier = Modifier.height(36.dp)) {
-                Text(stringResource(R.string.unbind), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            TextButton(
+                onClick = onUnbind,
+                modifier = Modifier.height(36.dp)
+            ) {
+                Text(
+                    stringResource(
+                        R.string.unbind
+                    ),
+                    fontSize = 12.sp,
+                    color =
+                        MaterialTheme.colorScheme.error
+                )
             }
         } else {
-            Button(onClick = onBind, modifier = Modifier.height(36.dp), enabled = canBind) {
-                Text(stringResource(R.string.bind), fontSize = 12.sp)
+            Button(
+                onClick = onBind,
+                modifier = Modifier.height(36.dp),
+                enabled = canBind
+            ) {
+                Text(
+                    stringResource(
+                        R.string.bind
+                    ),
+                    fontSize = 12.sp
+                )
             }
         }
     }
@@ -1014,22 +1618,53 @@ fun ColumnScope.LogSection(
             .fillMaxWidth()
             .weight(1.5f)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement =
+                    Arrangement.SpaceBetween,
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.log), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(
+                        R.string.log
+                    ),
+                    style =
+                        MaterialTheme.typography.titleMedium
+                )
+
                 Row {
-                    TextButton(onClick = onViewFullLog) {
-                        Text(stringResource(R.string.expand))
+                    TextButton(
+                        onClick = onViewFullLog
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.expand
+                            )
+                        )
                     }
-                    TextButton(onClick = onCopyLog) {
-                        Text(stringResource(R.string.copy))
+
+                    TextButton(
+                        onClick = onCopyLog
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.copy
+                            )
+                        )
                     }
-                    TextButton(onClick = onClear) {
-                        Text(stringResource(R.string.clear))
+
+                    TextButton(
+                        onClick = onClear
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.clear
+                            )
+                        )
                     }
                 }
             }
@@ -1047,20 +1682,33 @@ fun ColumnScope.LogSection(
             ) {
                 if (logMessages.isEmpty()) {
                     Text(
-                        stringResource(R.string.no_logs),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        stringResource(
+                            R.string.no_logs
+                        ),
+                        style =
+                            MaterialTheme.typography.bodySmall,
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    val scrollState = rememberScrollState()
+                    val scrollState =
+                        rememberScrollState()
 
-                    LaunchedEffect(logMessages.size) {
-                        scrollState.animateScrollTo(scrollState.maxValue)
+                    LaunchedEffect(
+                        logMessages.size
+                    ) {
+                        scrollState.animateScrollTo(
+                            scrollState.maxValue
+                        )
                     }
 
                     Text(
-                        text = logMessages.joinToString("\n"),
-                        style = MaterialTheme.typography.bodySmall,
+                        text =
+                            logMessages.joinToString(
+                                "\n"
+                            ),
+                        style =
+                            MaterialTheme.typography.bodySmall,
                         modifier = Modifier
                             .fillMaxWidth()
                             .verticalScroll(scrollState)
@@ -1072,16 +1720,30 @@ fun ColumnScope.LogSection(
 }
 
 @Composable
-fun FullLogDialog(logMessages: List<String>, onDismiss: () -> Unit) {
-    val scrollState = rememberScrollState()
+fun FullLogDialog(
+    logMessages: List<String>,
+    onDismiss: () -> Unit
+) {
+    val scrollState =
+        rememberScrollState()
 
-    LaunchedEffect(logMessages.size) {
-        scrollState.animateScrollTo(scrollState.maxValue)
+    LaunchedEffect(
+        logMessages.size
+    ) {
+        scrollState.animateScrollTo(
+            scrollState.maxValue
+        )
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.log_messages)) },
+        title = {
+            Text(
+                stringResource(
+                    R.string.log_messages
+                )
+            )
+        },
         text = {
             SelectionContainer {
                 Box(
@@ -1091,16 +1753,27 @@ fun FullLogDialog(logMessages: List<String>, onDismiss: () -> Unit) {
                         .verticalScroll(scrollState)
                 ) {
                     Text(
-                        text = logMessages.joinToString("\n"),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth()
+                        text =
+                            logMessages.joinToString(
+                                "\n"
+                            ),
+                        style =
+                            MaterialTheme.typography.bodySmall,
+                        modifier =
+                            Modifier.fillMaxWidth()
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.close))
+            TextButton(
+                onClick = onDismiss
+            ) {
+                Text(
+                    stringResource(
+                        R.string.close
+                    )
+                )
             }
         }
     )
