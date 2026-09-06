@@ -25,6 +25,9 @@
     <string name="authorize">授权</string>
     <string name="usb_permission_granted">USB 权限已授予</string>
     <string name="usb_permission_required">需要 USB 权限</string>
+    <string name="usb_hub_not_shareable">USB 集线器 — 不可共享</string>
+    <string name="usb_billboard_not_shareable">USB Billboard 设备 — 不可共享</string>
+    <string name="usb_blacklisted_not_shareable">已知不兼容的 USB 设备 — 不可共享</string>
     <string name="bind">绑定</string>
     <string name="unbind">解绑</string>
     <string name="unknown_device">未知设备</string>
