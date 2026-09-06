@@ -29,6 +29,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -212,6 +214,15 @@ fun MainScreen(
     var pendingBindDeviceName by rememberSaveable { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
+
+    // 页面导航：
+    // 0 = 服务器 / USB 设备
+    // 1 = 日志
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { 2 }
+    )
+
     val context = LocalContext.current
     // performBind 会被 rememberLauncherForActivityResult 的回调长期持有（首次组合
     // 的实例），必须经 rememberUpdatedState 读最新 usbService，否则授权后拿到
@@ -495,128 +506,232 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ServerControlPanel(
-                serverRunning = serverRunning,
-                isStarting = isStarting,
-                isStopping = isStopping,
-                portText = portText,
-                onPortChange = { portText = it },
-                onStart = {
-                    val port = portText.toIntOrNull() ?: 3240
-                    val service = usbService
-                    if (service == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@ServerControlPanel
-                    }
-                    // native 初始化失败时无法启动服务器，明确提示
-                    if (!service.nativeReady) {
-                        Toast.makeText(context, context.getString(R.string.native_init_failed), Toast.LENGTH_SHORT).show()
-                        return@ServerControlPanel
-                    }
-                    isStarting = true
-                    scope.launch {
-                        val success = service.startServer(port)
-                        isStarting = false
-                        if (success) {
-                            serverRunning = true
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) { page ->
+                when (page) {
+                    // Page 1 : serveur et périphériques USB
+                    0 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            ServerControlPanel(
+                                serverRunning = serverRunning,
+                                isStarting = isStarting,
+                                isStopping = isStopping,
+                                portText = portText,
+                                onPortChange = { portText = it },
+                                onStart = {
+                                    val port = portText.toIntOrNull() ?: 3240
+                                    val service = usbService
+                                    if (service == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.service_not_ready),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerControlPanel
+                                    }
+                                    // native 初始化失败时无法启动服务器，明确提示
+                                    if (!service.nativeReady) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.native_init_failed),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerControlPanel
+                                    }
+                                    isStarting = true
+                                    scope.launch {
+                                        val success = service.startServer(port)
+                                        isStarting = false
+                                        if (success) {
+                                            serverRunning = true
+                                        }
+                                    }
+                                },
+                                onStop = {
+                                    val service = usbService
+                                    if (service == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.service_not_ready),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerControlPanel
+                                    }
+                                    isStopping = true
+                                    scope.launch {
+                                        service.stopServer()
+                                        isStopping = false
+                                        serverRunning = false
+                                        boundDevices = emptySet()
+                                    }
+                                }
+                            )
+
+                            StatusCard(
+                                serverRunning = serverRunning,
+                                boundCount = boundDevices.size,
+                                ipAddresses = ipAddresses.value,
+                                port = portText.toIntOrNull() ?: 3240
+                            )
+
+                            DeviceListSection(
+                                devices = devices,
+                                boundDevices = boundDevices,
+                                busyDevices = busyDevices,
+                                serverRunning = serverRunning,
+                                getBusid = { usbService?.getBusid(it) },
+                                onBindDevice = { device ->
+                                    if (!serverRunning) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.please_start_server),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@DeviceListSection
+                                    }
+                                    if (usbService == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.service_not_ready),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@DeviceListSection
+                                    }
+                                    // 摄像头设备需要先获取 CAMERA 权限
+                                    if (
+                                        isCameraDevice(device) &&
+                                        ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.CAMERA
+                                        ) != PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        if (pendingBindDeviceName != null) {
+                                            // 已有待处理请求（权限对话框未完成），忽略新的，
+                                            // 防止 pendingBindDeviceName 被覆盖导致授权后绑错设备
+                                            return@DeviceListSection
+                                        }
+                                        pendingBindDeviceName = device.deviceName
+                                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                    } else {
+                                        performBind(device)
+                                    }
+                                },
+                                onUnbindDevice = { device ->
+                                    val service = usbService
+                                    if (service == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.service_not_ready),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@DeviceListSection
+                                    }
+                                    val deviceName = device.productName?.takeIf { it.isNotEmpty() }
+                                        ?: context.getString(R.string.unknown_device)
+                                    scope.launch {
+                                        busyDevices = busyDevices + device.deviceName
+                                        try {
+                                            val result = service.unbindDevice(device.deviceName)
+                                            // 无论成功失败都刷新，确保 UI 与 Service 状态一致
+                                            boundDevices = service.boundDeviceNames
+                                            when (result) {
+                                                is DeviceUnbindResult.Success -> {
+                                                    Toast.makeText(
+                                                        context,
+                                                        context.getString(
+                                                            R.string.unbind_success,
+                                                            deviceName
+                                                        ),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                                is DeviceUnbindResult.Failure -> {
+                                                    Toast.makeText(
+                                                        context,
+                                                        context.getString(
+                                                            R.string.unbind_failed,
+                                                            result.getMessage(context)
+                                                        ),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            }
+                                        } finally {
+                                            busyDevices = busyDevices - device.deviceName
+                                        }
+                                    }
+                                },
+                                onRefresh = { refreshDevices() }
+                            )
                         }
                     }
-                },
-                onStop = {
-                    val service = usbService
-                    if (service == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@ServerControlPanel
-                    }
-                    isStopping = true
-                    scope.launch {
-                        service.stopServer()
-                        isStopping = false
-                        serverRunning = false
-                        boundDevices = emptySet()
+
+                    // Page 2 : journal
+                    1 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                )
+                        ) {
+                            LogSection(
+                                logMessages = logMessages,
+                                onClear = { logMessages = emptyList() },
+                                onViewFullLog = { showFullLog = true },
+                                onCopyLog = {
+                                    val clipboard =
+                                        context.getSystemService(
+                                            Context.CLIPBOARD_SERVICE
+                                        ) as ClipboardManager
+                                    clipboard.setPrimaryClip(
+                                        ClipData.newPlainText(
+                                            "Log",
+                                            logMessages.joinToString("\n")
+                                        )
+                                    )
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.log_copied),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            )
+                        }
                     }
                 }
-            )
+            }
 
-            StatusCard(
-                serverRunning = serverRunning,
-                boundCount = boundDevices.size,
-                ipAddresses = ipAddresses.value,
-                port = portText.toIntOrNull() ?: 3240
-            )
-
-            DeviceListSection(
-                devices = devices,
-                boundDevices = boundDevices,
-                busyDevices = busyDevices,
-                serverRunning = serverRunning,
-                getBusid = { usbService?.getBusid(it) },
-                onBindDevice = { device ->
-                    if (!serverRunning) {
-                        Toast.makeText(context, context.getString(R.string.please_start_server), Toast.LENGTH_SHORT).show()
-                        return@DeviceListSection
-                    }
-                    if (usbService == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@DeviceListSection
-                    }
-                    // 摄像头设备需要先获取 CAMERA 权限
-                    if (isCameraDevice(device) &&
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        if (pendingBindDeviceName != null) {
-                            // 已有待处理请求（权限对话框未完成），忽略新的，
-                            // 防止 pendingBindDeviceName 被覆盖导致授权后绑错设备
-                            return@DeviceListSection
-                        }
-                        pendingBindDeviceName = device.deviceName
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    } else {
-                        performBind(device)
-                    }
-                },
-                onUnbindDevice = { device ->
-                    val service = usbService
-                    if (service == null) {
-                        Toast.makeText(context, context.getString(R.string.service_not_ready), Toast.LENGTH_SHORT).show()
-                        return@DeviceListSection
-                    }
-                    val deviceName = device.productName?.takeIf { it.isNotEmpty() }
-                        ?: context.getString(R.string.unknown_device)
+            // Bulles fixes en bas : appui ou swipe pour changer de page.
+            PageIndicator(
+                pageCount = 2,
+                currentPage = pagerState.currentPage,
+                onPageSelected = { page ->
                     scope.launch {
-                        busyDevices = busyDevices + device.deviceName
-                        try {
-                            val result = service.unbindDevice(device.deviceName)
-                            // 无论成功失败都刷新，确保 UI 与 Service 状态一致
-                            boundDevices = service.boundDeviceNames
-                            when (result) {
-                                is DeviceUnbindResult.Success -> {
-                                    Toast.makeText(context, context.getString(R.string.unbind_success, deviceName), Toast.LENGTH_SHORT).show()
-                                }
-                                is DeviceUnbindResult.Failure -> {
-                                    Toast.makeText(context, context.getString(R.string.unbind_failed, result.getMessage(context)), Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } finally {
-                            busyDevices = busyDevices - device.deviceName
-                        }
+                        pagerState.animateScrollToPage(page)
                     }
                 },
-                onRefresh = { refreshDevices() }
-            )
-
-            LogSection(
-                logMessages = logMessages,
-                onClear = { logMessages = emptyList() },
-                onViewFullLog = { showFullLog = true },
-                onCopyLog = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Log", logMessages.joinToString("\n")))
-                    Toast.makeText(context, context.getString(R.string.log_copied), Toast.LENGTH_SHORT).show()
-                }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, bottom = 8.dp)
             )
         }
     }
@@ -663,6 +778,40 @@ fun MainScreen(
                 }
             }
         )
+    }
+}
+
+
+@Composable
+fun PageIndicator(
+    pageCount: Int,
+    currentPage: Int,
+    onPageSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(pageCount) { page ->
+            IconButton(
+                onClick = { onPageSelected(page) }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(if (currentPage == page) 10.dp else 8.dp)
+                        .background(
+                            color = if (currentPage == page) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant
+                            },
+                            shape = RoundedCornerShape(50)
+                        )
+                )
+            }
+        }
     }
 }
 
