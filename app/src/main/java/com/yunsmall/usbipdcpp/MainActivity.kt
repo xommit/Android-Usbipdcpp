@@ -602,6 +602,11 @@ fun MainScreen(
         }.getOrDefault(ListenInterfaceType.ALL)
     }
 
+    val validPort =
+        portText.toIntOrNull()
+            ?.takeIf { it in 1..65535 }
+
+
     /*
      * État de permission USB par deviceName.
      *
@@ -1469,10 +1474,17 @@ fun MainScreen(
                                 isStarting = isStarting,
                                 isStopping = isStopping,
                                 canStart =
-                                    selectedListenType == ListenInterfaceType.ALL ||
-                                        selectedListenAddress.isNotBlank(),
+                                    validPort != null &&
+                                        (
+                                            selectedListenType ==
+                                                ListenInterfaceType.ALL ||
+                                                selectedListenAddress.isNotBlank()
+                                        ),
                                 onStart = {
-                                    val port = portText.toIntOrNull() ?: 3240
+                                    val port =
+                                        validPort
+                                            ?: return@ServerActionButton
+
                                     val service = usbService
 
                                     if (service == null) {
@@ -1576,7 +1588,10 @@ fun MainScreen(
                                 serverRunning = serverRunning,
                                 boundCount = boundDevices.size,
                                 ipAddresses = statusIpAddresses,
-                                port = portText.toIntOrNull() ?: 3240
+                                port =
+                                    usbService?.port
+                                        ?: validPort
+                                        ?: 0
                             )
 
                             DeviceListSection(
@@ -2085,14 +2100,22 @@ fun ServerControlPanel(
                     onValueChange = {
                         onPortChange(
                             it.filter { c -> c.isDigit() }
+                                .take(5)
                         )
                     },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number
                     ),
-                    modifier = Modifier.width(120.dp),
+                    modifier = Modifier.width(96.dp),
                     enabled = portEditable,
                     singleLine = true,
+                    isError =
+                        portText.isNotEmpty() &&
+                            (
+                                portText.toIntOrNull()
+                                    ?.let { it !in 1..65535 }
+                                    ?: true
+                            ),
                     textStyle =
                         MaterialTheme.typography.bodyMedium
                 )
