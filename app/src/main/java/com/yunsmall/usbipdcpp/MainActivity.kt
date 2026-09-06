@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -676,6 +677,13 @@ fun ServerControlPanel(
     onStart: () -> Unit,
     onStop: () -> Unit
 ) {
+    val fontScale = LocalDensity.current.fontScale
+    val portFieldHeight = when {
+        fontScale >= 1.5f -> 64.dp
+        fontScale >= 1.3f -> 56.dp
+        else -> 48.dp
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -693,7 +701,9 @@ fun ServerControlPanel(
                     onValueChange = { onPortChange(it.filter { c -> c.isDigit() }) },
                     label = { Text(stringResource(R.string.port)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(100.dp),
+                    modifier = Modifier
+                        .width(100.dp)
+                        .height(portFieldHeight),
                     enabled = !serverRunning && !isStarting,
                     singleLine = true
                 )
