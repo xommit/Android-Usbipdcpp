@@ -39,6 +39,10 @@
     <string name="no_logs">Aucun journal pour le moment</string>
 
     <!-- Messages natifs / journal d'exécution -->
+    <string name="log_usb_permission_requested">Permission USB demandée pour %1$s</string>
+    <string name="log_usb_permission_granted">Permission USB accordée pour %1$s</string>
+    <string name="log_usb_permission_denied">Permission USB refusée pour %1$s</string>
+
     <string name="log_devices_found">%1$d périphérique(s) USB détecté(s)</string>
 
     <string name="log_server_starting">Démarrage du serveur USB/IP sur le port %1$d</string>
