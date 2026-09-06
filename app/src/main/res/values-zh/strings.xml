@@ -39,6 +39,10 @@
     <string name="no_logs">暂无日志</string>
 
     <!-- Native / Runtime Log Messages -->
+    <string name="log_usb_permission_requested">已请求 %1$s 的 USB 权限</string>
+    <string name="log_usb_permission_granted">已授予 %1$s 的 USB 权限</string>
+    <string name="log_usb_permission_denied">已拒绝 %1$s 的 USB 权限</string>
+
     <string name="log_devices_found">检测到 %1$d 个 USB 设备</string>
 
     <string name="log_server_starting">正在端口 %1$d 上启动 USB/IP 服务器</string>
