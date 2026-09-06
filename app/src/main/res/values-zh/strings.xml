@@ -47,34 +47,36 @@
     <string name="log_usb_permission_denied">已拒绝 %1$s 的 USB 权限</string>
 
     <string name="log_devices_found">检测到 %1$d 个 USB 设备</string>
-
     <string name="log_server_starting">正在端口 %1$d 上启动 USB/IP 服务器</string>
     <string name="log_server_started">服务器启动成功</string>
     <string name="log_server_stopping">正在停止 USB/IP 服务器</string>
     <string name="log_server_stopped">USB/IP 服务器已停止</string>
     <string name="log_server_stop_success">服务器停止成功</string>
-
     <string name="log_listening">正在监听 %1$s:%2$d</string>
-
     <string name="log_waiting_sessions">正在等待所有会话关闭</string>
     <string name="log_sessions_closed">所有会话均已成功关闭</string>
-
     <string name="log_libusb_thread_starting">正在启动 libusb 事件线程</string>
     <string name="log_libusb_thread_started">libusb 事件线程已启动</string>
     <string name="log_libusb_thread_stopping">正在等待 libusb 事件线程停止</string>
     <string name="log_libusb_thread_stopped">libusb 事件线程已停止</string>
-
     <string name="log_client_connected">客户端已连接：%1$s</string>
     <string name="log_client_disconnected">客户端已断开：%1$s</string>
-
     <string name="log_device_attached">USB 设备已连接：%1$s</string>
     <string name="log_device_detached_native">USB 设备已断开：%1$s</string>
     <string name="log_device_bound">USB 设备已绑定：%1$s</string>
     <string name="log_device_unbound">USB 设备已解绑：%1$s</string>
-
     <string name="log_session_started">USB/IP 会话已启动</string>
     <string name="log_session_stopped">USB/IP 会话已停止</string>
 
+    <string name="log_binding_usb_device">正在绑定 USB 设备：fd=%1$d，vid=%2$s，pid=%3$s</string>
+    <string name="log_current_config_descriptor_failed">无法获取设备当前的配置描述符：%1$s</string>
+    <string name="log_bind_host_device_failed">bind_host_device_with_wrapped_fd 失败：%1$d</string>
+    <string name="log_device_added_available">设备 %1$s 已添加到可用列表 (fd=%2$d)</string>
+    <string name="log_device_status">设备状态：可用 %1$d 个 [%2$s] | 使用中 %3$d 个 [%4$s]</string>
+    <string name="log_device_bound_successfully">设备绑定成功：%1$s</string>
+    <string name="log_unbinding_usb_device">正在解绑 USB 设备，fd=%1$d</string>
+    <string name="log_device_unbound_native_successfully">成功取消绑定设备 %1$s (fd=%2$d)</string>
+    <string name="log_device_unbound_successfully">设备解绑成功</string>
     <string name="log_unknown_message">%1$s</string>
 
     <!-- Toast Messages -->

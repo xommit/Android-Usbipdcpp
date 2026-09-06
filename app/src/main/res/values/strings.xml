@@ -47,34 +47,36 @@
     <string name="log_usb_permission_denied">USB permission denied for %1$s</string>
 
     <string name="log_devices_found">%1$d USB device(s) found</string>
-
     <string name="log_server_starting">Starting USB/IP server on port %1$d</string>
     <string name="log_server_started">Server started successfully</string>
     <string name="log_server_stopping">Stopping USB/IP server</string>
     <string name="log_server_stopped">USB/IP server stopped</string>
     <string name="log_server_stop_success">Server stopped successfully</string>
-
     <string name="log_listening">Listening on %1$s:%2$d</string>
-
     <string name="log_waiting_sessions">Waiting for all sessions to close</string>
     <string name="log_sessions_closed">All sessions closed successfully</string>
-
     <string name="log_libusb_thread_starting">Starting libusb event thread</string>
     <string name="log_libusb_thread_started">libusb event thread started</string>
     <string name="log_libusb_thread_stopping">Waiting for libusb event thread to stop</string>
     <string name="log_libusb_thread_stopped">libusb event thread stopped</string>
-
     <string name="log_client_connected">Client connected: %1$s</string>
     <string name="log_client_disconnected">Client disconnected: %1$s</string>
-
     <string name="log_device_attached">USB device attached: %1$s</string>
     <string name="log_device_detached_native">USB device detached: %1$s</string>
     <string name="log_device_bound">USB device bound: %1$s</string>
     <string name="log_device_unbound">USB device unbound: %1$s</string>
-
     <string name="log_session_started">USB/IP session started</string>
     <string name="log_session_stopped">USB/IP session stopped</string>
 
+    <string name="log_binding_usb_device">Binding USB device: fd=%1$d, vid=%2$s, pid=%3$s</string>
+    <string name="log_current_config_descriptor_failed">Failed to get current device configuration descriptor: %1$s</string>
+    <string name="log_bind_host_device_failed">bind_host_device_with_wrapped_fd failed: %1$d</string>
+    <string name="log_device_added_available">Device %1$s added to available list (fd=%2$d)</string>
+    <string name="log_device_status">Device status: %1$d available [%2$s] | %3$d in use [%4$s]</string>
+    <string name="log_device_bound_successfully">Device bound successfully: %1$s</string>
+    <string name="log_unbinding_usb_device">Unbinding USB device with fd=%1$d</string>
+    <string name="log_device_unbound_native_successfully">Successfully unbound device %1$s (fd=%2$d)</string>
+    <string name="log_device_unbound_successfully">Device unbound successfully</string>
     <string name="log_unknown_message">%1$s</string>
 
     <!-- Toast Messages -->

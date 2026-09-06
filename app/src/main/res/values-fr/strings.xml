@@ -47,34 +47,36 @@
     <string name="log_usb_permission_denied">Permission USB refusée pour %1$s</string>
 
     <string name="log_devices_found">%1$d périphérique(s) USB détecté(s)</string>
-
     <string name="log_server_starting">Démarrage du serveur USB/IP sur le port %1$d</string>
     <string name="log_server_started">Serveur démarré avec succès</string>
     <string name="log_server_stopping">Arrêt du serveur USB/IP</string>
     <string name="log_server_stopped">Serveur USB/IP arrêté</string>
     <string name="log_server_stop_success">Serveur arrêté avec succès</string>
-
     <string name="log_listening">Écoute sur %1$s:%2$d</string>
-
     <string name="log_waiting_sessions">Attente de la fermeture de toutes les sessions</string>
     <string name="log_sessions_closed">Toutes les sessions ont été fermées avec succès</string>
-
     <string name="log_libusb_thread_starting">Démarrage du thread d’événements libusb</string>
     <string name="log_libusb_thread_started">Thread d’événements libusb démarré</string>
     <string name="log_libusb_thread_stopping">Attente de l’arrêt du thread d’événements libusb</string>
     <string name="log_libusb_thread_stopped">Thread d’événements libusb arrêté</string>
-
     <string name="log_client_connected">Client connecté : %1$s</string>
     <string name="log_client_disconnected">Client déconnecté : %1$s</string>
-
     <string name="log_device_attached">Périphérique USB connecté : %1$s</string>
     <string name="log_device_detached_native">Périphérique USB déconnecté : %1$s</string>
     <string name="log_device_bound">Périphérique USB associé : %1$s</string>
     <string name="log_device_unbound">Périphérique USB dissocié : %1$s</string>
-
     <string name="log_session_started">Session USB/IP démarrée</string>
     <string name="log_session_stopped">Session USB/IP arrêtée</string>
 
+    <string name="log_binding_usb_device">Association du périphérique USB : fd=%1$d, vid=%2$s, pid=%3$s</string>
+    <string name="log_current_config_descriptor_failed">Impossible d’obtenir le descripteur de configuration actuel du périphérique : %1$s</string>
+    <string name="log_bind_host_device_failed">Échec de bind_host_device_with_wrapped_fd : %1$d</string>
+    <string name="log_device_added_available">Périphérique %1$s ajouté à la liste des périphériques disponibles (fd=%2$d)</string>
+    <string name="log_device_status">État des périphériques : %1$d disponible(s) [%2$s] | %3$d utilisé(s) [%4$s]</string>
+    <string name="log_device_bound_successfully">Périphérique associé avec succès : %1$s</string>
+    <string name="log_unbinding_usb_device">Dissociation du périphérique USB avec fd=%1$d</string>
+    <string name="log_device_unbound_native_successfully">Périphérique %1$s dissocié avec succès (fd=%2$d)</string>
+    <string name="log_device_unbound_successfully">Périphérique dissocié avec succès</string>
     <string name="log_unknown_message">%1$s</string>
 
     <!-- Messages -->

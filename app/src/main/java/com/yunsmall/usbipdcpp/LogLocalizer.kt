@@ -5,13 +5,13 @@ import android.content.Context
 /**
  * Converts native/runtime log messages into Android string resources.
  *
- * Native C++ logging remains language-neutral. This class recognizes the
- * messages currently emitted by the project (including the historical
- * Chinese messages) and lets Android choose the translation from values/,
+ * The native project may emit messages in English or Chinese.
+ * This class recognizes the known native messages and lets Android
+ * display them using the selected app language through values/,
  * values-fr/, values-zh/, etc.
  *
- * Unknown messages are intentionally returned unchanged so that diagnostics
- * are never lost if the native library adds a new log line.
+ * Unknown messages are returned unchanged so that diagnostic
+ * information is never lost.
  */
 object LogLocalizer {
 
@@ -21,97 +21,157 @@ object LogLocalizer {
     ): String {
         val message = sourceMessage.trim()
 
-        if (message.isEmpty()) {
-            return message
-        }
+        if (message.isEmpty()) return message
 
-        // Android-side device refresh message.
         Regex(
-            pattern = """^Found\s+(\d+)\s+USB device\(s\)$""",
-            option = RegexOption.IGNORE_CASE
+            """^Found\s+(\d+)\s+USB device\(s\)$""",
+            RegexOption.IGNORE_CASE
         ).matchEntire(message)?.let { match ->
-            val count = match.groupValues[1].toIntOrNull()
-                ?: return@let
-            return context.getString(
-                R.string.log_devices_found,
-                count
-            )
+            val count = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(R.string.log_devices_found, count)
         }
 
-        /*
-         * Android-side USB permission messages.
-         *
-         * MainActivity always emits these messages in a canonical,
-         * language-neutral English form. Translation stays centralized here.
-         */
-        matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^USB permission requested for\s+(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
+        Regex(
+            """^USB permission requested for\s+(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
             return context.getString(
                 R.string.log_usb_permission_requested,
-                value
+                match.groupValues[1]
             )
         }
 
-        matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^USB permission granted for\s+(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
+        Regex(
+            """^USB permission granted for\s+(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
             return context.getString(
                 R.string.log_usb_permission_granted,
-                value
+                match.groupValues[1]
             )
         }
 
-        matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^USB permission denied for\s+(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
+        Regex(
+            """^USB permission denied for\s+(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
             return context.getString(
                 R.string.log_usb_permission_denied,
-                value
+                match.groupValues[1]
             )
         }
 
-        // Starting USB/IP server on port 3240
         Regex(
-            pattern = """^Starting USB/IP server on port\s+(\d+)$""",
-            option = RegexOption.IGNORE_CASE
+            """^Starting USB/IP server on port\s+(\d+)$""",
+            RegexOption.IGNORE_CASE
         ).matchEntire(message)?.let { match ->
-            val port = match.groupValues[1].toIntOrNull()
-                ?: return@let
-            return context.getString(
-                R.string.log_server_starting,
-                port
-            )
+            val port = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(R.string.log_server_starting, port)
         }
 
-        // Listening on 0.0.0.0:3240
         Regex(
-            pattern = """^Listening on\s+(.+):(\d+)$""",
-            option = RegexOption.IGNORE_CASE
+            """^Listening on\s+(.+):(\d+)$""",
+            RegexOption.IGNORE_CASE
         ).matchEntire(message)?.let { match ->
-            val host = match.groupValues[1]
-            val port = match.groupValues[2].toIntOrNull()
-                ?: return@let
+            val port = match.groupValues[2].toIntOrNull() ?: return@let
             return context.getString(
                 R.string.log_listening,
-                host,
+                match.groupValues[1],
                 port
             )
         }
 
-        // Exact messages currently observed in the native layer.
+        Regex(
+            """^Binding USB device:\s*fd=(\d+),\s*vid=(0x[0-9A-Fa-f]+),\s*pid=(0x[0-9A-Fa-f]+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_binding_usb_device,
+                fd,
+                match.groupValues[2],
+                match.groupValues[3]
+            )
+        }
+
+        Regex(
+            """^(?:无法获取设备当前的配置描述符|Failed to get current device configuration descriptor):\s*(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            return context.getString(
+                R.string.log_current_config_descriptor_failed,
+                match.groupValues[1]
+            )
+        }
+
+        Regex(
+            """^bind_host_device_with_wrapped_fd failed:\s*(\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val code = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_bind_host_device_failed,
+                code
+            )
+        }
+
+        Regex(
+            """^设备\s+(.+?)\s+已添加到可用列表\s*\(fd=(\d+)\)$"""
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[2].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_device_added_available,
+                match.groupValues[1],
+                fd
+            )
+        }
+
+        Regex(
+            """^设备状态:\s*可用\s*(\d+)\s*个\s*\[(.*?)\]\s*\|\s*使用中\s*(\d+)\s*个\s*\[(.*?)\]$"""
+        ).matchEntire(message)?.let { match ->
+            val available = match.groupValues[1].toIntOrNull() ?: return@let
+            val inUse = match.groupValues[3].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_device_status,
+                available,
+                match.groupValues[2],
+                inUse,
+                match.groupValues[4]
+            )
+        }
+
+        Regex(
+            """^Device bound successfully:\s*(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            return context.getString(
+                R.string.log_device_bound_successfully,
+                match.groupValues[1]
+            )
+        }
+
+        Regex(
+            """^Unbinding USB device with fd=(\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_unbinding_usb_device,
+                fd
+            )
+        }
+
+        Regex(
+            """^成功取消绑定设备\s+(.+?)\s+\(fd=(\d+)\)$"""
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[2].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_device_unbound_native_successfully,
+                match.groupValues[1],
+                fd
+            )
+        }
+
         when (message) {
             "Server started successfully" ->
                 return context.getString(R.string.log_server_started)
@@ -158,6 +218,11 @@ object LogLocalizer {
             "libusb 事件线程结束" ->
                 return context.getString(R.string.log_libusb_thread_stopped)
 
+            "Device unbound successfully" ->
+                return context.getString(
+                    R.string.log_device_unbound_successfully
+                )
+
             "USB/IP session started" ->
                 return context.getString(R.string.log_session_started)
 
@@ -165,91 +230,49 @@ object LogLocalizer {
                 return context.getString(R.string.log_session_stopped)
         }
 
-        // Common messages with one textual parameter.
         matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^Client connected:\s*(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
-            return context.getString(
-                R.string.log_client_connected,
-                value
-            )
+            message,
+            Regex("""^Client connected:\s*(.+)$""", RegexOption.IGNORE_CASE)
+        )?.let {
+            return context.getString(R.string.log_client_connected, it)
         }
 
         matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^Client disconnected:\s*(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
-            return context.getString(
-                R.string.log_client_disconnected,
-                value
-            )
+            message,
+            Regex("""^Client disconnected:\s*(.+)$""", RegexOption.IGNORE_CASE)
+        )?.let {
+            return context.getString(R.string.log_client_disconnected, it)
         }
 
         matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^USB device attached:\s*(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
-            return context.getString(
-                R.string.log_device_attached,
-                value
-            )
+            message,
+            Regex("""^USB device attached:\s*(.+)$""", RegexOption.IGNORE_CASE)
+        )?.let {
+            return context.getString(R.string.log_device_attached, it)
         }
 
         matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^USB device detached:\s*(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
-            return context.getString(
-                R.string.log_device_detached_native,
-                value
-            )
+            message,
+            Regex("""^USB device detached:\s*(.+)$""", RegexOption.IGNORE_CASE)
+        )?.let {
+            return context.getString(R.string.log_device_detached_native, it)
         }
 
         matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^USB device bound:\s*(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
-            return context.getString(
-                R.string.log_device_bound,
-                value
-            )
+            message,
+            Regex("""^USB device bound:\s*(.+)$""", RegexOption.IGNORE_CASE)
+        )?.let {
+            return context.getString(R.string.log_device_bound, it)
         }
 
         matchSingleArgument(
-            message = message,
-            regex = Regex(
-                """^USB device unbound:\s*(.+)$""",
-                RegexOption.IGNORE_CASE
-            )
-        )?.let { value ->
-            return context.getString(
-                R.string.log_device_unbound,
-                value
-            )
+            message,
+            Regex("""^USB device unbound:\s*(.+)$""", RegexOption.IGNORE_CASE)
+        )?.let {
+            return context.getString(R.string.log_device_unbound, it)
         }
 
-        // Important: preserve unknown native diagnostics as-is.
-        // Do not hide or mistranslate new C++ messages.
-        return context.getString(
-            R.string.log_unknown_message,
-            message
-        )
+        return context.getString(R.string.log_unknown_message, message)
     }
 
     private fun matchSingleArgument(
