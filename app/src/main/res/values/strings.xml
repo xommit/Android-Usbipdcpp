@@ -39,6 +39,10 @@
     <string name="no_logs">No logs yet</string>
 
     <!-- Native / Runtime Log Messages -->
+    <string name="log_usb_permission_requested">USB permission requested for %1$s</string>
+    <string name="log_usb_permission_granted">USB permission granted for %1$s</string>
+    <string name="log_usb_permission_denied">USB permission denied for %1$s</string>
+
     <string name="log_devices_found">%1$d USB device(s) found</string>
 
     <string name="log_server_starting">Starting USB/IP server on port %1$d</string>
