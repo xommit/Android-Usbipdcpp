@@ -1,35 +1,29 @@
 package com.yunsmall.usbipdcpp
 
 import android.Manifest
-import android.hardware.usb.UsbConstants
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.NetworkInterface
-import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.content.ContextCompat
-import androidx.core.os.LocaleListCompat
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -53,13 +47,26 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import com.yunsmall.usbipdcpp.ui.theme.UsbipdcppTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Locale
 
 // 文件顶层常量：MainScreen 是顶层函数而非 MainActivity 方法，
 // 常量放 companion（private）会访问不到
 private const val TAG = "MainActivity"
+
+data class NetworkAddress(
+    val interfaceName: String,
+    val address: String,
+    val priority: Int
+)
 
 class MainActivity : AppCompatActivity() {
 
@@ -287,79 +294,102 @@ fun MainScreen(
         }
     }
 
-    // 获取设备IP地址
-    fun getDeviceIpAddress(): String? {
-    try {
-        val candidates = mutableListOf<Pair<Int, String>>()
-        val interfaces = NetworkInterface.getNetworkInterfaces()
+    // 获取所有适合客户端连接的 IPv4 地址。
+    // 服务器监听 0.0.0.0，因此 Wi-Fi、VPN、Ethernet 等地址都可能可用。
+    fun getDeviceIpAddresses(): List<NetworkAddress> {
+        return try {
+            val candidates = mutableListOf<NetworkAddress>()
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
 
-        while (interfaces.hasMoreElements()) {
-            val networkInterface = interfaces.nextElement()
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
 
-            if (networkInterface.isLoopback || !networkInterface.isUp) continue
+                if (networkInterface.isLoopback || !networkInterface.isUp) {
+                    continue
+                }
 
-            val ifName = networkInterface.name
-                ?.lowercase(Locale.getDefault())
-                ?: ""
+                val ifName = networkInterface.name
+                    ?.lowercase(Locale.getDefault())
+                    ?: continue
 
-            if (
-                ifName.startsWith("tun") ||
-                ifName.startsWith("ppp") ||
-                ifName.startsWith("vpn") ||
-                ifName.startsWith("rmnet") ||
-                ifName.startsWith("clat") ||
-                ifName.startsWith("v4-") ||
-                ifName.startsWith("dummy") ||
-                ifName.startsWith("sit") ||
-                ifName.startsWith("ip6tnl")
-            ) {
-                continue
-            }
-
-            val addresses = networkInterface.inetAddresses
-
-            while (addresses.hasMoreElements()) {
-                val address = addresses.nextElement()
-                val host = address.hostAddress ?: continue
-
+                // Android 内部/移动网络接口不适合作为 USB/IP 客户端地址显示。
                 if (
-                    !address.isLoopbackAddress &&
-                    !address.isLinkLocalAddress &&
-                    address.isSiteLocalAddress &&
-                    !host.contains(':')
+                    ifName.startsWith("clat") ||
+                    ifName.startsWith("v4-") ||
+                    ifName.startsWith("dummy") ||
+                    ifName.startsWith("sit") ||
+                    ifName.startsWith("ip6tnl") ||
+                    ifName.startsWith("rmnet")
                 ) {
-                    val priority = when {
-                        ifName.startsWith("wlan") -> 0
-                        ifName.startsWith("swlan") -> 0
-                        ifName.startsWith("eth") -> 1
-                        ifName.startsWith("en") -> 1
-                        ifName.startsWith("rndis") -> 2
-                        ifName.startsWith("usb") -> 2
-                        else -> 10
+                    continue
+                }
+
+                val priority = when {
+                    // WireGuard / VPN
+                    ifName.startsWith("wg") -> 0
+                    ifName.startsWith("tun") -> 0
+                    ifName.startsWith("vpn") -> 0
+
+                    // Wi-Fi
+                    ifName.startsWith("wlan") -> 1
+                    ifName.startsWith("swlan") -> 1
+
+                    // Ethernet
+                    ifName.startsWith("eth") -> 2
+                    ifName.startsWith("en") -> 2
+
+                    // USB / tethering
+                    ifName.startsWith("rndis") -> 3
+                    ifName.startsWith("usb") -> 3
+
+                    else -> 10
+                }
+
+                val addresses = networkInterface.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val address = addresses.nextElement()
+                    val host = address.hostAddress ?: continue
+
+                    if (
+                        address !is Inet4Address ||
+                        address.isLoopbackAddress ||
+                        address.isLinkLocalAddress ||
+                        host.startsWith("192.0.0.")
+                    ) {
+                        continue
                     }
 
-                    candidates.add(priority to host)
+                    candidates.add(
+                        NetworkAddress(
+                            interfaceName = networkInterface.name ?: ifName,
+                            address = host,
+                            priority = priority
+                        )
+                    )
                 }
             }
+
+            candidates
+                .distinctBy { it.address }
+                .sortedWith(compareBy<NetworkAddress> { it.priority }.thenBy { it.interfaceName })
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get IP addresses", e)
+            emptyList()
+        }
+    }
+
+    val ipAddresses = remember { mutableStateOf<List<NetworkAddress>>(emptyList()) }
+
+    // 刷新地址：VPN 在服务器已运行时启用/禁用，也会自动更新界面。
+    LaunchedEffect(serverRunning) {
+        if (!serverRunning) {
+            ipAddresses.value = emptyList()
+            return@LaunchedEffect
         }
 
-        return candidates.minByOrNull { it.first }?.second
-
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to get IP address", e)
-    }
-
-    return null
-    }
-    
-
-    val ipAddress = remember { mutableStateOf<String?>(null) }
-
-    // 获取IP地址
-    LaunchedEffect(serverRunning) {
-        if (serverRunning) {
-            // 网络接口枚举可能耗时（多虚拟网卡时），放 IO 线程避免卡主线程
-            ipAddress.value = withContext(Dispatchers.IO) { getDeviceIpAddress() }
+        while (true) {
+            ipAddresses.value = withContext(Dispatchers.IO) { getDeviceIpAddresses() }
+            delay(2000)
         }
     }
 
@@ -514,7 +544,7 @@ fun MainScreen(
             StatusCard(
                 serverRunning = serverRunning,
                 boundCount = boundDevices.size,
-                ipAddress = ipAddress.value,
+                ipAddresses = ipAddresses.value,
                 port = portText.toIntOrNull() ?: 3240
             )
 
@@ -722,7 +752,7 @@ fun ServerControlPanel(
 fun StatusCard(
     serverRunning: Boolean,
     boundCount: Int,
-    ipAddress: String?,
+    ipAddresses: List<NetworkAddress>,
     port: Int
 ) {
     var showCopyMenu by remember { mutableStateOf(false) }
@@ -732,12 +762,15 @@ fun StatusCard(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(enabled = serverRunning) { showCopyMenu = true },
+                .clickable(
+                    enabled = serverRunning && ipAddresses.isNotEmpty()
+                ) { showCopyMenu = true },
             colors = CardDefaults.cardColors(
-                containerColor = if (serverRunning)
+                containerColor = if (serverRunning) {
                     MaterialTheme.colorScheme.primaryContainer
-                else
+                } else {
                     MaterialTheme.colorScheme.surfaceVariant
+                }
             )
         ) {
             Row(
@@ -759,16 +792,27 @@ fun StatusCard(
 
                 Column {
                     Text(
-                        text = if (serverRunning) stringResource(R.string.server_running) else stringResource(R.string.server_stopped),
+                        text = if (serverRunning) {
+                            stringResource(R.string.server_running)
+                        } else {
+                            stringResource(R.string.server_stopped)
+                        },
                         style = MaterialTheme.typography.titleMedium
                     )
+
                     if (serverRunning) {
-                        ipAddress?.let {
+                        ipAddresses.forEach { networkAddress ->
                             Text(
-                                text = stringResource(R.string.address, it, port),
+                                text = "${networkAddress.interfaceName} • " +
+                                    stringResource(
+                                        R.string.address,
+                                        networkAddress.address,
+                                        port
+                                    ),
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+
                         Text(
                             text = stringResource(R.string.devices_bound, boundCount),
                             style = MaterialTheme.typography.bodySmall
@@ -782,26 +826,40 @@ fun StatusCard(
             expanded = showCopyMenu,
             onDismissRequest = { showCopyMenu = false }
         ) {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            ipAddress?.let { ip ->
+            val clipboard =
+                context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+            ipAddresses.forEach { networkAddress ->
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.copy_ip, ip)) },
+                    text = {
+                        Text(
+                            "${networkAddress.interfaceName} — " +
+                                stringResource(
+                                    R.string.copy_address,
+                                    networkAddress.address,
+                                    port
+                                )
+                        )
+                    },
                     onClick = {
-                        clipboard.setPrimaryClip(ClipData.newPlainText("IP", ip))
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText(
+                                "Address",
+                                "${networkAddress.address}:$port"
+                            )
+                        )
                         showCopyMenu = false
                     }
                 )
+            }
+
+            if (ipAddresses.isNotEmpty()) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.copy_port, port)) },
                     onClick = {
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Port", port.toString()))
-                        showCopyMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.copy_address, ip, port)) },
-                    onClick = {
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Address", "$ip:$port"))
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText("Port", port.toString())
+                        )
                         showCopyMenu = false
                     }
                 )
