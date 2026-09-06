@@ -22,6 +22,12 @@
     <string name="usb_devices">USB Devices</string>
     <string name="refresh">Refresh</string>
     <string name="no_devices">No USB devices found</string>
+    <string name="authorize">Authorize</string>
+    <string name="usb_permission_granted">USB permission granted</string>
+    <string name="usb_permission_required">USB permission required</string>
+    <string name="usb_hub_not_shareable">USB hub — not shareable</string>
+    <string name="usb_billboard_not_shareable">USB Billboard device — not shareable</string>
+    <string name="usb_blacklisted_not_shareable">Known incompatible USB device — not shareable</string>
     <string name="bind">Bind</string>
     <string name="unbind">Unbind</string>
     <string name="unknown_device">Unknown Device</string>
@@ -36,6 +42,10 @@
     <string name="no_logs">No logs yet</string>
 
     <!-- Native / Runtime Log Messages -->
+    <string name="log_usb_permission_requested">USB permission requested for %1$s</string>
+    <string name="log_usb_permission_granted">USB permission granted for %1$s</string>
+    <string name="log_usb_permission_denied">USB permission denied for %1$s</string>
+
     <string name="log_devices_found">%1$d USB device(s) found</string>
 
     <string name="log_server_starting">Starting USB/IP server on port %1$d</string>

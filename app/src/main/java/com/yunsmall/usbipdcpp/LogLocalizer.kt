@@ -38,6 +38,51 @@ object LogLocalizer {
             )
         }
 
+        /*
+         * Android-side USB permission messages.
+         *
+         * MainActivity always emits these messages in a canonical,
+         * language-neutral English form. Translation stays centralized here.
+         */
+        matchSingleArgument(
+            message = message,
+            regex = Regex(
+                """^USB permission requested for\s+(.+)$""",
+                RegexOption.IGNORE_CASE
+            )
+        )?.let { value ->
+            return context.getString(
+                R.string.log_usb_permission_requested,
+                value
+            )
+        }
+
+        matchSingleArgument(
+            message = message,
+            regex = Regex(
+                """^USB permission granted for\s+(.+)$""",
+                RegexOption.IGNORE_CASE
+            )
+        )?.let { value ->
+            return context.getString(
+                R.string.log_usb_permission_granted,
+                value
+            )
+        }
+
+        matchSingleArgument(
+            message = message,
+            regex = Regex(
+                """^USB permission denied for\s+(.+)$""",
+                RegexOption.IGNORE_CASE
+            )
+        )?.let { value ->
+            return context.getString(
+                R.string.log_usb_permission_denied,
+                value
+            )
+        }
+
         // Starting USB/IP server on port 3240
         Regex(
             pattern = """^Starting USB/IP server on port\s+(\d+)$""",

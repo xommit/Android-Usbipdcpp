@@ -22,6 +22,12 @@
     <string name="usb_devices">USB 设备</string>
     <string name="refresh">刷新</string>
     <string name="no_devices">未找到 USB 设备</string>
+    <string name="authorize">授权</string>
+    <string name="usb_permission_granted">USB 权限已授予</string>
+    <string name="usb_permission_required">需要 USB 权限</string>
+    <string name="usb_hub_not_shareable">USB 集线器 — 不可共享</string>
+    <string name="usb_billboard_not_shareable">USB Billboard 设备 — 不可共享</string>
+    <string name="usb_blacklisted_not_shareable">已知不兼容的 USB 设备 — 不可共享</string>
     <string name="bind">绑定</string>
     <string name="unbind">解绑</string>
     <string name="unknown_device">未知设备</string>
@@ -36,6 +42,10 @@
     <string name="no_logs">暂无日志</string>
 
     <!-- Native / Runtime Log Messages -->
+    <string name="log_usb_permission_requested">已请求 %1$s 的 USB 权限</string>
+    <string name="log_usb_permission_granted">已授予 %1$s 的 USB 权限</string>
+    <string name="log_usb_permission_denied">已拒绝 %1$s 的 USB 权限</string>
+
     <string name="log_devices_found">检测到 %1$d 个 USB 设备</string>
 
     <string name="log_server_starting">正在端口 %1$d 上启动 USB/IP 服务器</string>
