@@ -35,6 +35,38 @@
     <string name="close">关闭</string>
     <string name="no_logs">暂无日志</string>
 
+    <!-- Native / Runtime Log Messages -->
+    <string name="log_devices_found">检测到 %1$d 个 USB 设备</string>
+
+    <string name="log_server_starting">正在端口 %1$d 上启动 USB/IP 服务器</string>
+    <string name="log_server_started">服务器启动成功</string>
+    <string name="log_server_stopping">正在停止 USB/IP 服务器</string>
+    <string name="log_server_stopped">USB/IP 服务器已停止</string>
+    <string name="log_server_stop_success">服务器停止成功</string>
+
+    <string name="log_listening">正在监听 %1$s:%2$d</string>
+
+    <string name="log_waiting_sessions">正在等待所有会话关闭</string>
+    <string name="log_sessions_closed">所有会话均已成功关闭</string>
+
+    <string name="log_libusb_thread_starting">正在启动 libusb 事件线程</string>
+    <string name="log_libusb_thread_started">libusb 事件线程已启动</string>
+    <string name="log_libusb_thread_stopping">正在等待 libusb 事件线程停止</string>
+    <string name="log_libusb_thread_stopped">libusb 事件线程已停止</string>
+
+    <string name="log_client_connected">客户端已连接：%1$s</string>
+    <string name="log_client_disconnected">客户端已断开：%1$s</string>
+
+    <string name="log_device_attached">USB 设备已连接：%1$s</string>
+    <string name="log_device_detached_native">USB 设备已断开：%1$s</string>
+    <string name="log_device_bound">USB 设备已绑定：%1$s</string>
+    <string name="log_device_unbound">USB 设备已解绑：%1$s</string>
+
+    <string name="log_session_started">USB/IP 会话已启动</string>
+    <string name="log_session_stopped">USB/IP 会话已停止</string>
+
+    <string name="log_unknown_message">%1$s</string>
+
     <!-- Toast Messages -->
     <string name="please_start_server">请先启动服务器</string>
     <string name="permission_denied">权限被拒绝</string>
@@ -61,6 +93,7 @@
     <!-- Language -->
     <string name="language">语言</string>
     <string name="language_en">English</string>
+    <string name="language_fr">Français</string>
     <string name="language_zh">中文</string>
 
     <!-- Copy -->
