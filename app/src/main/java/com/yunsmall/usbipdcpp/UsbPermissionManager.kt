@@ -20,45 +20,19 @@ class UsbPermissionManager(
 
         const val ACTION_USB_PERMISSION =
             "com.yunsmall.usbipdcpp.USB_PERMISSION"
+
+        private const val EXTRA_REQUEST_DEVICE_NAME =
+            "com.yunsmall.usbipdcpp.EXTRA_REQUEST_DEVICE_NAME"
     }
 
     /*
-     * PendingIntent utilisé par UsbManager.requestPermission().
-     *
-     * Android ajoute automatiquement :
-     * - UsbManager.EXTRA_DEVICE
-     * - UsbManager.EXTRA_PERMISSION_GRANTED
-     *
-     * FLAG_IMMUTABLE est suffisant pour cette utilisation.
-     */
-    private val permissionIntent: PendingIntent by lazy {
-        val intent = Intent(ACTION_USB_PERMISSION)
-            .setPackage(context.packageName)
-
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE
-        } else {
-            0
-        }
-
-        PendingIntent.getBroadcast(
-            context,
-            0,
-            intent,
-            flags
-        )
-    }
-
-    /*
-     * Verrou unique protégeant la liste des demandes de permission
-     * actuellement en attente.
+     * Verrou unique protégeant les demandes de permission actuellement
+     * en attente.
      */
     private val lock = Any()
 
     /*
-     * Une demande peut être en cours pour plusieurs périphériques USB
-     * simultanément.
-     *
+     * Plusieurs périphériques peuvent demander une autorisation en parallèle.
      * La clé correspond au deviceName Android.
      */
     private val pendingCallbacks =
@@ -75,9 +49,6 @@ class UsbPermissionManager(
     private var onPermissionResult:
         ((UsbDevice, Boolean) -> Unit)? = null
 
-    /*
-     * Évite les doubles registerReceiver / unregisterReceiver.
-     */
     private var permissionReceiverRegistered = false
     private var deviceReceiverRegistered = false
 
@@ -93,24 +64,12 @@ class UsbPermissionManager(
         onDeviceDetached = listener
     }
 
-    /*
-     * Appelé lorsqu'une véritable demande de permission USB
-     * est envoyée à Android.
-     *
-     * Si la permission existe déjà, ce callback n'est pas appelé.
-     */
     fun setOnPermissionRequestedListener(
         listener: ((UsbDevice) -> Unit)?
     ) {
         onPermissionRequested = listener
     }
 
-    /*
-     * Appelé lorsque la boîte de dialogue Android renvoie son résultat.
-     *
-     * granted = true  -> permission accordée
-     * granted = false -> permission refusée
-     */
     fun setOnPermissionResultListener(
         listener: ((UsbDevice, Boolean) -> Unit)?
     ) {
@@ -118,8 +77,52 @@ class UsbPermissionManager(
     }
 
     /*
-     * Receiver privé destiné uniquement au résultat de
-     * UsbManager.requestPermission().
+     * Crée un PendingIntent distinct pour chaque périphérique.
+     *
+     * FLAG_MUTABLE est nécessaire ici car UsbManager ajoute au résultat :
+     * - UsbManager.EXTRA_DEVICE
+     * - UsbManager.EXTRA_PERMISSION_GRANTED
+     *
+     * L'Intent est explicitement limité au package de l'application, ce qui
+     * est requis pour les PendingIntent mutables sur les versions Android
+     * récentes.
+     */
+    private fun createPermissionIntent(
+        device: UsbDevice
+    ): PendingIntent {
+        val intent =
+            Intent(ACTION_USB_PERMISSION)
+                .setPackage(context.packageName)
+                .putExtra(
+                    EXTRA_REQUEST_DEVICE_NAME,
+                    device.deviceName
+                )
+
+        val flags =
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.S
+            ) {
+                PendingIntent.FLAG_MUTABLE or
+                    PendingIntent.FLAG_UPDATE_CURRENT
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+
+        /*
+         * requestCode distinct par deviceName pour éviter qu'une demande
+         * d'un périphérique remplace celle d'un autre.
+         */
+        return PendingIntent.getBroadcast(
+            context,
+            device.deviceName.hashCode(),
+            intent,
+            flags
+        )
+    }
+
+    /*
+     * Receiver privé du résultat de UsbManager.requestPermission().
      */
     private val permissionReceiver =
         object : BroadcastReceiver() {
@@ -128,12 +131,21 @@ class UsbPermissionManager(
                 context: Context,
                 intent: Intent
             ) {
-                if (intent.action != ACTION_USB_PERMISSION) {
+                if (
+                    intent.action !=
+                    ACTION_USB_PERMISSION
+                ) {
                     return
                 }
 
-                val device =
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                /*
+                 * Chemin normal : Android fournit EXTRA_DEVICE.
+                 */
+                var device =
+                    if (
+                        Build.VERSION.SDK_INT >=
+                        Build.VERSION_CODES.TIRAMISU
+                    ) {
                         intent.getParcelableExtra(
                             UsbManager.EXTRA_DEVICE,
                             UsbDevice::class.java
@@ -145,46 +157,96 @@ class UsbPermissionManager(
                         )
                     }
 
+                /*
+                 * Chemin de secours :
+                 * certaines implémentations constructeur peuvent fournir un
+                 * résultat incomplet. Le deviceName ajouté à notre Intent
+                 * permet alors de retrouver le périphérique encore connecté.
+                 */
+                if (device == null) {
+                    val requestedDeviceName =
+                        intent.getStringExtra(
+                            EXTRA_REQUEST_DEVICE_NAME
+                        )
+
+                    if (
+                        !requestedDeviceName.isNullOrEmpty()
+                    ) {
+                        device =
+                            usbManager.deviceList[
+                                requestedDeviceName
+                            ]
+                    }
+                }
+
                 val granted =
                     intent.getBooleanExtra(
                         UsbManager.EXTRA_PERMISSION_GRANTED,
                         false
                     )
 
-                device ?: return
+                if (device == null) {
+                    /*
+                     * Ne jamais laisser l'interface bloquée indéfiniment.
+                     *
+                     * Si Android n'a fourni aucun périphérique exploitable,
+                     * supprimer les demandes devenues impossibles à associer.
+                     */
+                    Log.e(
+                        TAG,
+                        "USB permission result received without device"
+                    )
+
+                    val callbacks =
+                        synchronized(lock) {
+                            val copy =
+                                pendingCallbacks.toMap()
+
+                            pendingCallbacks.clear()
+                            copy
+                        }
+
+                    callbacks.forEach {
+                        (deviceName, callback) ->
+
+                        val pendingDevice =
+                            usbManager.deviceList[
+                                deviceName
+                            ]
+
+                        if (pendingDevice != null) {
+                            onPermissionResult?.invoke(
+                                pendingDevice,
+                                false
+                            )
+
+                            callback.invoke(
+                                pendingDevice,
+                                false
+                            )
+                        }
+                    }
+
+                    return
+                }
 
                 Log.d(
                     TAG,
                     "USB permission result for ${device.deviceName}: $granted"
                 )
 
-                /*
-                 * Retirer le callback sous verrou.
-                 *
-                 * Le callback lui-même est exécuté hors du verrou afin
-                 * d'éviter un blocage s'il déclenche une autre opération USB.
-                 */
-                val callback = synchronized(lock) {
-                    pendingCallbacks.remove(
-                        device.deviceName
-                    )
-                }
+                val callback =
+                    synchronized(lock) {
+                        pendingCallbacks.remove(
+                            device.deviceName
+                        )
+                    }
 
-                /*
-                 * Informe l'interface de l'état de la permission.
-                 */
                 onPermissionResult?.invoke(
                     device,
                     granted
                 )
 
-                /*
-                 * Exécute ensuite l'action qui attendait cette permission.
-                 *
-                 * Cela pourra être :
-                 * - simplement autoriser le périphérique ;
-                 * - poursuivre automatiquement un bind USB/IP.
-                 */
                 callback?.invoke(
                     device,
                     granted
@@ -194,7 +256,6 @@ class UsbPermissionManager(
 
     /*
      * Receiver des événements physiques USB :
-     *
      * - branchement
      * - débranchement
      */
@@ -241,38 +302,28 @@ class UsbPermissionManager(
                         )
 
                         /*
-                         * Une permission USB Android est perdue lorsque le
+                         * Une permission USB Android disparaît lorsque le
                          * périphérique est physiquement débranché.
                          *
-                         * Si une demande était encore en attente pour ce
-                         * périphérique, elle ne doit pas rester bloquée.
+                         * Si une demande était encore en attente, elle ne doit
+                         * pas rester bloquée.
                          */
-                        val pendingCallback = synchronized(lock) {
-                            pendingCallbacks.remove(
-                                device.deviceName
-                            )
-                        }
+                        val pendingCallback =
+                            synchronized(lock) {
+                                pendingCallbacks.remove(
+                                    device.deviceName
+                                )
+                            }
 
-                        /*
-                         * Informe l'appelant que l'opération en attente ne
-                         * peut plus aboutir.
-                         */
                         pendingCallback?.invoke(
                             device,
                             false
                         )
 
-                        /*
-                         * Permet au Service de nettoyer un éventuel bind
-                         * USB/IP correspondant à ce périphérique.
-                         */
                         onDeviceDetached?.invoke(
                             device
                         )
 
-                        /*
-                         * Met à jour la liste des périphériques affichés.
-                         */
                         onDeviceAttached?.invoke()
                     }
                 }
@@ -326,10 +377,6 @@ class UsbPermissionManager(
                 Build.VERSION.SDK_INT >=
                 Build.VERSION_CODES.TIRAMISU
             ) {
-                /*
-                 * USB_DEVICE_ATTACHED et USB_DEVICE_DETACHED proviennent
-                 * du système Android.
-                 */
                 context.registerReceiver(
                     deviceReceiver,
                     deviceFilter,
@@ -379,12 +426,6 @@ class UsbPermissionManager(
             }
         }
 
-        /*
-         * Ne conserver aucun callback lorsque l'Activity disparaît.
-         *
-         * Les callbacks peuvent capturer un ancien contexte ou un ancien
-         * état Compose.
-         */
         synchronized(lock) {
             pendingCallbacks.clear()
         }
@@ -399,10 +440,6 @@ class UsbPermissionManager(
         return usbManager.deviceList
     }
 
-    /*
-     * Vérifie si Android autorise actuellement l'application
-     * à accéder au périphérique.
-     */
     fun hasPermission(
         device: UsbDevice
     ): Boolean {
@@ -411,10 +448,6 @@ class UsbPermissionManager(
         )
     }
 
-    /*
-     * Indique si une demande de permission est déjà en cours
-     * pour ce périphérique.
-     */
     fun isPermissionRequestPending(
         device: UsbDevice
     ): Boolean {
@@ -440,11 +473,11 @@ class UsbPermissionManager(
         callback: (UsbDevice, Boolean) -> Unit
     ): Boolean {
 
-        /*
-         * Si Android nous a déjà accordé l'accès, aucune boîte de dialogue
-         * supplémentaire n'est nécessaire.
-         */
-        if (usbManager.hasPermission(device)) {
+        if (
+            usbManager.hasPermission(
+                device
+            )
+        ) {
             callback(
                 device,
                 true
@@ -453,10 +486,6 @@ class UsbPermissionManager(
             return true
         }
 
-        /*
-         * Empêche plusieurs clics rapides d'ouvrir ou de remplacer
-         * plusieurs demandes pour le même périphérique.
-         */
         synchronized(lock) {
             if (
                 pendingCallbacks.containsKey(
@@ -474,7 +503,9 @@ class UsbPermissionManager(
         try {
             usbManager.requestPermission(
                 device,
-                permissionIntent
+                createPermissionIntent(
+                    device
+                )
             )
 
             Log.d(
@@ -499,9 +530,14 @@ class UsbPermissionManager(
             }
 
             /*
-             * Informe immédiatement l'appelant que la demande n'a pas
-             * pu être lancée.
+             * Informe aussi l'interface du résultat afin qu'elle puisse
+             * immédiatement retirer un éventuel indicateur d'attente.
              */
+            onPermissionResult?.invoke(
+                device,
+                false
+            )
+
             callback(
                 device,
                 false
@@ -511,10 +547,6 @@ class UsbPermissionManager(
         return true
     }
 
-    /*
-     * Ouvre le périphérique uniquement si Android a déjà accordé
-     * la permission USB.
-     */
     fun openDevice(
         device: UsbDevice
     ): UsbDeviceConnection? {
