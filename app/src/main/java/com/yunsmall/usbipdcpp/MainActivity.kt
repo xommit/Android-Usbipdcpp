@@ -633,11 +633,15 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
 
     // 页面导航：
-    // 0 = 服务器 / USB 设备
-    // 1 = 日志
+    // 0 = 服务器控制
+    // 1 = USB 状态 / 设备（主页面）
+    // 2 = 日志
+    //
+    // La page USB reste la page principale même si la page de contrôle
+    // est placée avant elle dans l'ordre de navigation.
     val pagerState = rememberPagerState(
-        initialPage = 0,
-        pageCount = { 2 }
+        initialPage = 1,
+        pageCount = { 3 }
     )
 
     val context = LocalContext.current
@@ -1396,7 +1400,7 @@ fun MainScreen(
                     .weight(1f)
             ) { page ->
                 when (page) {
-                    // Page 1 : serveur et périphériques USB
+                    // Page 0 : contrôle du serveur (placée avant la page principale)
                     0 -> {
                         Column(
                             modifier = Modifier
@@ -1534,7 +1538,22 @@ fun MainScreen(
                                     }
                                 }
                             )
+                        }
+                    }
 
+                    // Page 1 : statut et périphériques USB — page principale
+                    1 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
                             StatusCard(
                                 serverRunning = serverRunning,
                                 boundCount = boundDevices.size,
@@ -1650,7 +1669,7 @@ fun MainScreen(
                     }
 
                     // Page 2 : journal
-                    1 -> {
+                    2 -> {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1692,7 +1711,7 @@ fun MainScreen(
 
             // Bulles fixes en bas : appui ou swipe pour changer de page.
             PageIndicator(
-                pageCount = 2,
+                pageCount = 3,
                 currentPage = pagerState.currentPage,
                 onPageSelected = { page ->
                     scope.launch {
