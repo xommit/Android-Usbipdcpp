@@ -41,11 +41,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -574,6 +578,16 @@ fun MainScreen(
     var isStarting by remember { mutableStateOf(false) }
     var isStopping by remember { mutableStateOf(false) }
     var portText by remember { mutableStateOf("3240") }
+
+    var portFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = portText,
+                selection = TextRange(portText.length)
+            )
+        )
+    }
+
     var devices by remember { mutableStateOf(mapOf<String, UsbDevice>()) }
     var boundDevices by remember { mutableStateOf(setOf<String>()) }
 
@@ -605,6 +619,15 @@ fun MainScreen(
     val validPort =
         portText.toIntOrNull()
             ?.takeIf { it in 1..65535 }
+
+    LaunchedEffect(portText) {
+        if (portFieldValue.text != portText) {
+            portFieldValue = TextFieldValue(
+                text = portText,
+                selection = TextRange(portText.length)
+            )
+        }
+    }
 
 
     /*
@@ -658,6 +681,18 @@ fun MainScreen(
     )
 
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+
+    /*
+     * Quand l'utilisateur quitte la page de contrôle du serveur, libérer le
+     * focus du champ Port. Cela ferme également le clavier et évite que le
+     * champ reste visuellement en mode édition sur les autres pages.
+     */
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != 0) {
+            focusManager.clearFocus(force = true)
+        }
+    }
 
     /*
      * IMPORTANT : les entrées sont conservées brutes dans le ViewModel et
@@ -1430,8 +1465,30 @@ fun MainScreen(
                                 serverRunning = serverRunning,
                                 isStarting = isStarting,
                                 isStopping = isStopping,
-                                portText = portText,
-                                onPortChange = { portText = it },
+                                portText = portFieldValue,
+                                onPortChange = { value ->
+                                    val digitsOnly =
+                                        value.text
+                                            .filter { c -> c.isDigit() }
+                                            .take(5)
+
+                                    portText = digitsOnly
+
+                                    val coercedSelectionStart =
+                                        value.selection.start
+                                            .coerceIn(0, digitsOnly.length)
+                                    val coercedSelectionEnd =
+                                        value.selection.end
+                                            .coerceIn(0, digitsOnly.length)
+
+                                    portFieldValue = TextFieldValue(
+                                        text = digitsOnly,
+                                        selection = TextRange(
+                                            coercedSelectionStart,
+                                            coercedSelectionEnd
+                                        )
+                                    )
+                                },
                                 listenType = selectedListenType,
                                 availableListenAddresses = availableListenAddresses,
                                 selectedListenAddress = selectedListenAddress,
@@ -1848,8 +1905,8 @@ fun ServerControlPanel(
     serverRunning: Boolean,
     isStarting: Boolean,
     isStopping: Boolean,
-    portText: String,
-    onPortChange: (String) -> Unit,
+    portText: TextFieldValue,
+    onPortChange: (TextFieldValue) -> Unit,
     listenType: ListenInterfaceType,
     availableListenAddresses: List<ListenAddressOption>,
     selectedListenAddress: String,
@@ -2095,30 +2152,55 @@ fun ServerControlPanel(
 
                 Spacer(modifier = Modifier.width(16.dp))
 
-                OutlinedTextField(
-                    value = portText,
-                    onValueChange = {
-                        onPortChange(
-                            it.filter { c -> c.isDigit() }
-                                .take(5)
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number
-                    ),
-                    modifier = Modifier.width(96.dp),
-                    enabled = portEditable,
-                    singleLine = true,
-                    isError =
-                        portText.isNotEmpty() &&
-                            (
-                                portText.toIntOrNull()
-                                    ?.let { it !in 1..65535 }
-                                    ?: true
-                            ),
-                    textStyle =
-                        MaterialTheme.typography.bodyMedium
-                )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    OutlinedTextField(
+                        value = portText,
+                        onValueChange = onPortChange,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        modifier = Modifier
+                            .width(96.dp)
+                            .onFocusChanged { focusState ->
+                                if (
+                                    focusState.isFocused &&
+                                        portText.text.isNotEmpty() &&
+                                        portText.selection != TextRange(
+                                            0,
+                                            portText.text.length
+                                        )
+                                ) {
+                                    onPortChange(
+                                        portText.copy(
+                                            selection = TextRange(
+                                                0,
+                                                portText.text.length
+                                            )
+                                        )
+                                    )
+                                }
+                            },
+                        enabled = portEditable,
+                        singleLine = true,
+                        isError =
+                            portText.text.isNotEmpty() &&
+                                (
+                                    portText.text.toIntOrNull()
+                                        ?.let { it !in 1..65535 }
+                                        ?: true
+                                ),
+                        textStyle =
+                            MaterialTheme.typography.bodyMedium
+                    )
+
+                    Text(
+                        text = "Défaut : 3240",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
