@@ -384,6 +384,14 @@ private fun serverStoppedNetworkLostText(context: Context): String {
     }
 }
 
+private fun defaultPortText(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Défaut : 3240"
+        "zh" -> "默认：3240"
+        else -> "Default: 3240"
+    }
+}
+
 class MainActivity : AppCompatActivity() {
 
     private val usbManager: UsbManager by lazy {
@@ -618,7 +626,7 @@ fun MainScreen(
 
     val validPort =
         portText.toIntOrNull()
-            ?.takeIf { it in 1..65535 }
+            ?.takeIf { it in 1024..65535 }
 
     LaunchedEffect(portText) {
         if (portFieldValue.text != portText) {
@@ -2140,67 +2148,75 @@ fun ServerControlPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Start
             ) {
-                Text(
-                    text = "${stringResource(R.string.port)} TCP",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (portEditable) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-
-                Spacer(modifier = Modifier.width(16.dp))
-
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    OutlinedTextField(
-                        value = portText,
-                        onValueChange = onPortChange,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number
-                        ),
-                        modifier = Modifier
-                            .width(96.dp)
-                            .onFocusChanged { focusState ->
-                                if (
-                                    focusState.isFocused &&
-                                        portText.text.isNotEmpty() &&
-                                        portText.selection != TextRange(
-                                            0,
-                                            portText.text.length
-                                        )
-                                ) {
-                                    onPortChange(
-                                        portText.copy(
-                                            selection = TextRange(
-                                                0,
-                                                portText.text.length
-                                            )
-                                        )
-                                    )
-                                }
-                            },
-                        enabled = portEditable,
-                        singleLine = true,
-                        isError =
-                            portText.text.isNotEmpty() &&
-                                (
-                                    portText.text.toIntOrNull()
-                                        ?.let { it !in 1..65535 }
-                                        ?: true
-                                ),
-                        textStyle =
-                            MaterialTheme.typography.bodyMedium
+                    Text(
+                        text = "${stringResource(R.string.port)} TCP",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (portEditable) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
 
                     Text(
-                        text = "Défaut : 3240",
+                        text = defaultPortText(context),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                OutlinedTextField(
+                    value = portText,
+                    onValueChange = onPortChange,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                    ),
+                    modifier = Modifier
+                        .width(96.dp)
+                        .onFocusChanged { focusState ->
+                            if (
+                                focusState.isFocused &&
+                                    portText.text.isNotEmpty() &&
+                                    portText.selection != TextRange(
+                                        0,
+                                        portText.text.length
+                                    )
+                            ) {
+                                onPortChange(
+                                    portText.copy(
+                                        selection = TextRange(
+                                            0,
+                                            portText.text.length
+                                        )
+                                    )
+                                )
+                            }
+                        },
+                    enabled = portEditable,
+                    singleLine = true,
+                    isError =
+                        portText.text.isNotEmpty() &&
+                            (
+                                portText.text.toIntOrNull()
+                                    ?.let { it !in 1024..65535 }
+                                    ?: true
+                            ),
+                    textStyle =
+                        MaterialTheme.typography.bodyMedium
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "(1024 - 65535)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
