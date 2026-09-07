@@ -206,6 +206,7 @@ private fun getAllClientIpv4Addresses(): List<NetworkAddress> {
         while (interfaces.hasMoreElements()) {
             val networkInterface = interfaces.nextElement()
 
+            // 跳过回环接口和未启用的接口
             if (
                 networkInterface.isLoopback ||
                 !networkInterface.isUp
@@ -260,6 +261,7 @@ private fun getAllClientIpv4Addresses(): List<NetworkAddress> {
                 val address = addresses.nextElement()
                 val host = address.hostAddress ?: continue
 
+                // 只返回IPv4地址
                 if (
                     address !is Inet4Address ||
                     address.isLoopbackAddress ||
@@ -744,6 +746,7 @@ fun MainScreen(
             return
         }
 
+        // native 初始化失败时绑定无意义，明确提示而非等 native 返回模糊错误
         if (!service.nativeReady) {
             Toast.makeText(
                 context,
@@ -834,6 +837,7 @@ fun MainScreen(
      * déjà accordée. Cette vérification protège toutefois contre un changement
      * d'état entre l'affichage et le clic.
      */
+    // 执行设备绑定（USB 权限 + native 绑定）
     fun performBind(device: UsbDevice) {
         if (permissionManager.hasPermission(device)) {
             bindAuthorizedDevice(device)
@@ -855,6 +859,7 @@ fun MainScreen(
         }
 
         if (!accepted) {
+            // 请求未受理：同设备已有待处理的权限请求，明确提示避免误以为无反应
             Toast.makeText(
                 context,
                 context.getString(R.string.permission_request_pending),
@@ -911,6 +916,7 @@ fun MainScreen(
         action: String,
         block: () -> Unit
     ) {
+        // 摄像头设备需要先获取 CAMERA 权限
         if (
             !isCameraDevice(device) ||
             ContextCompat.checkSelfPermission(
@@ -1037,6 +1043,7 @@ fun MainScreen(
                 NetworkInterfaceResolver.getAvailableAddresses(context)
 
             allClientIpAddresses =
+                // 网络接口枚举可能耗时（多虚拟网卡时），放 IO 线程避免卡主线程
                 withContext(Dispatchers.IO) {
                     getAllClientIpv4Addresses()
                 }
@@ -1561,6 +1568,7 @@ fun MainScreen(
                                         return@ServerActionButton
                                     }
 
+                                    // native 初始化失败时无法启动服务器，明确提示
                                     if (!service.nativeReady) {
                                         Toast.makeText(
                                             context,
@@ -1731,6 +1739,7 @@ fun MainScreen(
 
                                         try {
                                             val result = service.unbindDevice(device.deviceName)
+                                            // 无论成功失败都刷新，确保 UI 与 Service 状态一致
                                             boundDevices = service.boundDeviceNames
 
                                             when (result) {
@@ -1831,6 +1840,7 @@ fun MainScreen(
     }
 
     if (showAbout) {
+        // 当前包名查不到自己的信息理论上不可能，但规范上还是防御一下
         val version = try {
             context.packageManager
                 .getPackageInfo(context.packageName, 0)

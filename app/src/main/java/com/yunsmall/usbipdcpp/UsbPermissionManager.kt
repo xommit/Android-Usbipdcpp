@@ -25,12 +25,15 @@ class UsbPermissionManager(
             "com.yunsmall.usbipdcpp.EXTRA_REQUEST_DEVICE_NAME"
     }
 
+    // 统一锁对象：onReceive 与 requestPermission 各自 synchronized(this) 时
+    // this 指向不同对象（Receiver 实例 vs Manager 实例），互斥完全不生效
     /*
      * Verrou unique protégeant les demandes de permission actuellement
      * en attente.
      */
     private val lock = Any()
 
+    // 按 deviceName 存待处理请求：多设备并发请求互不覆盖，回调后立即移除
     /*
      * Plusieurs périphériques peuvent demander une autorisation en parallèle.
      * La clé correspond au deviceName Android.
@@ -235,8 +238,11 @@ class UsbPermissionManager(
                     "USB permission result for ${device.deviceName}: $granted"
                 )
 
+                // 锁内只取出，锁外执行回调：回调可能再次发起权限请求，
+                // 锁内同步执行用户代码（锁不可重入）有死锁风险
                 val callback =
                     synchronized(lock) {
+                        // 取用后移除：回调闭包持有 Activity 引用，不清理会泄漏
                         pendingCallbacks.remove(
                             device.deviceName
                         )
@@ -301,6 +307,8 @@ class UsbPermissionManager(
                             "USB device detached: ${device.deviceName}"
                         )
 
+                        // 拔出后权限结果广播不会返回，清掉对应 pending 回调，
+                        // 否则条目残留会让该设备名后续无法再发起权限请求
                         /*
                          * Une permission USB Android disparaît lorsque le
                          * périphérique est physiquement débranché.
@@ -320,10 +328,14 @@ class UsbPermissionManager(
                             false
                         )
 
+                        // onDeviceDetached 只负责解绑清理，不刷设备列表；
+                        // 下面的 onDeviceAttached 才负责刷新设备列表，
+                        // 两个回调职责不同，不算重复刷新
                         onDeviceDetached?.invoke(
                             device
                         )
 
+                        // 设备物理拔出，设备列表必须刷新
                         onDeviceAttached?.invoke()
                     }
                 }
@@ -459,6 +471,10 @@ class UsbPermissionManager(
     }
 
     /**
+     * @return true 表示请求已受理（含已有权限直接回调的情况），
+     *         false 表示同设备已有待处理请求、本次未受理
+     */
+    /**
      * Demande à Android l'autorisation d'accéder au périphérique USB.
      *
      * @return true :
@@ -486,6 +502,9 @@ class UsbPermissionManager(
             return true
         }
 
+        // 锁内只存回调，锁外发起系统请求：避免持锁调用可能同步回调的外部代码。
+        // 同一设备已有待处理请求时拒绝新的：重复点击系统只弹一次对话框，
+        // 回调被覆盖会导致前一次请求的 UI 状态（如 busyDevices）无法清除
         synchronized(lock) {
             if (
                 pendingCallbacks.containsKey(
