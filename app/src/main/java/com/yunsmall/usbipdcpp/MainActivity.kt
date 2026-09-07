@@ -1152,32 +1152,36 @@ fun MainScreen(
         }
 
     // 设置native日志回调
-    DisposableEffect(Unit) {
-        // onLog 由 native 日志线程回调，直接更新 Compose 状态会跨线程写，
-        // 切到主线程再执行
-        val mainHandler = Handler(Looper.getMainLooper())
+    DisposableEffect(serviceBound, usbService) {
+        if (!serviceBound || usbService?.nativeReady != true) {
+            onDispose { }
+        } else {
+            // onLog 由 native 日志线程回调，直接更新 Compose 状态会跨线程写，
+            // 切到主线程再执行
+            val mainHandler = Handler(Looper.getMainLooper())
 
-        val callback = object : LogCallback {
-            override fun onLog(
-                level: Int,
-                message: String
-            ) {
-                mainHandler.post {
-                    addLog(
-                        message = message.trim(),
-                        level = level
-                    )
+            val callback = object : LogCallback {
+                override fun onLog(
+                    level: Int,
+                    message: String
+                ) {
+                    mainHandler.post {
+                        addLog(
+                            message = message.trim(),
+                            level = level
+                        )
+                    }
                 }
             }
-        }
 
-        UsbIpNative.setLogCallback(callback)
+            UsbIpNative.setLogCallback(callback)
 
-        onDispose {
-            // 必须清回调：旋转重建时新 setLogCallback 会替换旧引用（无需清理），
-            // 但应用退后台（Activity 销毁、不再有新回调）时不清的话，JNI 的
-            // 全局引用会一直持有旧 Activity，导致泄漏
-            UsbIpNative.setLogCallback(null)
+            onDispose {
+                // 必须清回调：旋转重建时新 setLogCallback 会替换旧引用（无需清理），
+                // 但应用退后台（Activity 销毁、不再有新回调）时不清的话，JNI 的
+                // 全局引用会一直持有旧 Activity，导致泄漏
+                UsbIpNative.setLogCallback(null)
+            }
         }
     }
 

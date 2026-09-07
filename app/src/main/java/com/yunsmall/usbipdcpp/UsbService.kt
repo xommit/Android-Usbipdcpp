@@ -100,6 +100,7 @@ class UsbService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        startForeground(NOTIFICATION_ID, createNotification())
         nativeReady = UsbIpNative.init()
         if (!nativeReady) {
             Log.e(TAG, "Native initialization failed, USB/IP features unavailable")
@@ -114,7 +115,6 @@ class UsbService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, createNotification())
         return START_STICKY
     }
 
