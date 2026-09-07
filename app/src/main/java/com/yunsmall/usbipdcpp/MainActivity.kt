@@ -291,106 +291,12 @@ private fun getAllClientIpv4Addresses(): List<NetworkAddress> {
     }
 }
 
-/*
- * Textes réseau temporaires localisés ici pour ne pas rendre ce fichier
- * dépendant de nouvelles ressources XML au même commit.
- *
- * Ils couvrent les trois langues actuellement proposées par l'application.
- * Ils pourront être déplacés dans strings.xml dans une étape dédiée.
- */
-private fun networkUiLanguage(context: Context): String {
-    return context.resources.configuration.locales[0].language
-}
-
-private fun listenInterfaceTypeLabel(
-    context: Context,
-    type: ListenInterfaceType
-): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> when (type) {
-            ListenInterfaceType.ALL -> "Toutes"
-            ListenInterfaceType.VPN -> "VPN"
-            ListenInterfaceType.WIFI -> "Wi-Fi"
-            ListenInterfaceType.ETHERNET -> "Ethernet"
-        }
-
-        "zh" -> when (type) {
-            ListenInterfaceType.ALL -> "全部"
-            ListenInterfaceType.VPN -> "VPN"
-            ListenInterfaceType.WIFI -> "Wi-Fi"
-            ListenInterfaceType.ETHERNET -> "以太网"
-        }
-
-        else -> when (type) {
-            ListenInterfaceType.ALL -> "All"
-            ListenInterfaceType.VPN -> "VPN"
-            ListenInterfaceType.WIFI -> "Wi-Fi"
-            ListenInterfaceType.ETHERNET -> "Ethernet"
-        }
-    }
-}
-
-private fun listenInterfaceFieldLabel(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "Interface réseau du serveur"
-        "zh" -> "服务器网络接口"
-        else -> "Server network interface"
-    }
-}
-
-private fun allInterfacesLabel(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "Toutes les interfaces (0.0.0.0)"
-        "zh" -> "所有接口 (0.0.0.0)"
-        else -> "All interfaces (0.0.0.0)"
-    }
-}
-
-private fun listenAddressFieldLabel(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "Adresse d'écoute"
-        "zh" -> "监听地址"
-        else -> "Listen address"
-    }
-}
-
-private fun noListenAddressText(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "Aucune adresse disponible"
-        "zh" -> "没有可用地址"
-        else -> "No address available"
-    }
-}
-
-private fun selectListenAddressText(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "Sélectionner une adresse"
-        "zh" -> "选择地址"
-        else -> "Select an address"
-    }
-}
-
-private fun listenInterfaceUnavailableText(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "L'interface réseau sélectionnée n'est plus disponible."
-        "zh" -> "所选网络接口已不可用。"
-        else -> "The selected network interface is no longer available."
-    }
-}
-
-private fun serverStoppedNetworkLostText(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "Interface réseau perdue : serveur USB/IP arrêté."
-        "zh" -> "网络接口已断开：USB/IP 服务器已停止。"
-        else -> "Network interface lost: USB/IP server stopped."
-    }
-}
-
-private fun defaultPortText(context: Context): String {
-    return when (networkUiLanguage(context)) {
-        "fr" -> "Défaut : 3240"
-        "zh" -> "默认：3240"
-        else -> "Default: 3240"
+private fun listenInterfaceTypeStringRes(type: ListenInterfaceType): Int {
+    return when (type) {
+        ListenInterfaceType.ALL -> R.string.network_all
+        ListenInterfaceType.VPN -> R.string.network_vpn
+        ListenInterfaceType.WIFI -> R.string.network_wifi
+        ListenInterfaceType.ETHERNET -> R.string.network_ethernet
     }
 }
 
@@ -1180,7 +1086,7 @@ fun MainScreen(
 
                 Toast.makeText(
                     context,
-                    serverStoppedNetworkLostText(context),
+                    context.getString(R.string.network_lost_server_stopped),
                     Toast.LENGTH_LONG
                 ).show()
 
@@ -1221,9 +1127,8 @@ fun MainScreen(
                         }
 
                         val typeLabel =
-                            listenInterfaceTypeLabel(
-                                context,
-                                option.type
+                            context.getString(
+                                listenInterfaceTypeStringRes(option.type)
                             )
 
                         val interfaceLabel =
@@ -1595,7 +1500,7 @@ fun MainScreen(
                                     if (listenAddress == null) {
                                         Toast.makeText(
                                             context,
-                                            listenInterfaceUnavailableText(context),
+                                            context.getString(R.string.network_interface_unavailable),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                         return@ServerActionButton
@@ -1610,7 +1515,7 @@ fun MainScreen(
                                     ) {
                                         Toast.makeText(
                                             context,
-                                            listenInterfaceUnavailableText(context),
+                                            context.getString(R.string.network_interface_unavailable),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                         return@ServerActionButton
@@ -1956,7 +1861,7 @@ fun ServerControlPanel(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = listenInterfaceFieldLabel(context),
+                    text = stringResource(R.string.server_network_interface),
                     style = MaterialTheme.typography.titleSmall
                 )
 
@@ -2004,7 +1909,7 @@ fun ServerControlPanel(
                         Spacer(modifier = Modifier.width(6.dp))
 
                         Text(
-                            text = allInterfacesLabel(context),
+                            text = stringResource(R.string.all_network_interfaces),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -2049,9 +1954,8 @@ fun ServerControlPanel(
                                 Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = listenInterfaceTypeLabel(
-                                    context,
-                                    type
+                                text = stringResource(
+                                    listenInterfaceTypeStringRes(type)
                                 ),
                                 style =
                                     MaterialTheme.typography.titleSmall
@@ -2059,7 +1963,7 @@ fun ServerControlPanel(
 
                             if (addresses.isEmpty()) {
                                 Text(
-                                    text = noListenAddressText(context),
+                                    text = stringResource(R.string.no_network_address),
                                     style =
                                         MaterialTheme.typography.bodyMedium,
                                     color =
@@ -2162,7 +2066,7 @@ fun ServerControlPanel(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = "${stringResource(R.string.port)} TCP",
+                        text = stringResource(R.string.port_tcp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (portEditable) {
                             MaterialTheme.colorScheme.onSurface
@@ -2172,7 +2076,7 @@ fun ServerControlPanel(
                     )
 
                     Text(
-                        text = defaultPortText(context),
+                        text = stringResource(R.string.default_port),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2223,7 +2127,7 @@ fun ServerControlPanel(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Text(
-                    text = "(1024 - 65535)",
+                    text = stringResource(R.string.port_range),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
