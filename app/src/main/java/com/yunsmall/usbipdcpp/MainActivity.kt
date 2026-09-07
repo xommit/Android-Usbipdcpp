@@ -2177,7 +2177,7 @@ fun ServerControlPanel(
                         keyboardType = KeyboardType.Number
                     ),
                     modifier = Modifier
-                        .width(96.dp)
+                        .width(88.dp)
                         .onFocusChanged { focusState ->
                             if (
                                 focusState.isFocused &&
