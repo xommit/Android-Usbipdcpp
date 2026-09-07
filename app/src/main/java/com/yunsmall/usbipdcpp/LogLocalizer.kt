@@ -61,12 +61,45 @@ object LogLocalizer {
             )
         }
 
+        /*
+         * Ancien format JNI :
+         * Starting USB/IP server on port 3240
+         */
         Regex(
             """^Starting USB/IP server on port\s+(\d+)$""",
             RegexOption.IGNORE_CASE
         ).matchEntire(message)?.let { match ->
             val port = match.groupValues[1].toIntOrNull() ?: return@let
             return context.getString(R.string.log_server_starting, port)
+        }
+
+        /*
+         * Nouveau format JNI avec bind réel :
+         * Starting USB/IP server on 10.8.0.2:3240
+         *
+         * On réutilise la chaîne localisée existante de démarrage et on
+         * ajoute simplement l'adresse technique, qui n'a pas à être traduite.
+         */
+        Regex(
+            """^Starting USB/IP server on\s+(.+):(\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val address = match.groupValues[1].trim()
+            val port = match.groupValues[2].toIntOrNull() ?: return@let
+            return "${context.getString(R.string.log_server_starting, port)} • $address:$port"
+        }
+
+        /*
+         * Nouveau format après démarrage réussi :
+         * Server started successfully on 10.8.0.2:3240
+         */
+        Regex(
+            """^Server started successfully on\s+(.+):(\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val address = match.groupValues[1].trim()
+            val port = match.groupValues[2].toIntOrNull() ?: return@let
+            return "${context.getString(R.string.log_server_started)} • $address:$port"
         }
 
         Regex(

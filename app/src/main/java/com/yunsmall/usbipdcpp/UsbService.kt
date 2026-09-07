@@ -29,6 +29,11 @@ class UsbService : Service() {
 
     private val binder = UsbBinder()
 
+    // Génération du moniteur réseau. Chaque démarrage/arrêt invalide le
+    // moniteur précédent sans interruption forcée de thread.
+    private val listenMonitorGeneration =
+        java.util.concurrent.atomic.AtomicInteger(0)
+
     // 保存活跃的USB连接
     private data class DeviceInfo(
         val connection: UsbDeviceConnection,
@@ -43,8 +48,15 @@ class UsbService : Service() {
     @Volatile
     var serverRunning = false
         private set
+
     @Volatile
     var port = 3240
+        private set
+
+    // Adresse IPv4 réellement utilisée par le serveur natif.
+    // 0.0.0.0 conserve le comportement historique : écoute sur toutes les interfaces.
+    @Volatile
+    var listenAddress = "0.0.0.0"
         private set
 
     val boundDeviceNames: Set<String>
@@ -110,6 +122,10 @@ class UsbService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+
+        // Empêche un moniteur d'adresse en cours de continuer après la
+        // destruction du Service.
+        listenMonitorGeneration.incrementAndGet()
         try {
             unregisterReceiver(deviceDetachedReceiver)
         } catch (e: Exception) {
@@ -134,21 +150,42 @@ class UsbService : Service() {
         }.start()
     }
 
+    /**
+     * Compatibilité avec l'ancien appel : écoute sur toutes les interfaces IPv4.
+     */
     suspend fun startServer(port: Int): Boolean {
+        return startServer(port, "0.0.0.0")
+    }
+
+    /**
+     * Démarre le serveur USB/IP sur une adresse IPv4 locale précise.
+     *
+     * 0.0.0.0 conserve le comportement historique et écoute sur toutes les interfaces.
+     */
+    suspend fun startServer(port: Int, listenAddress: String): Boolean {
         if (serverRunning) return true
 
+        val normalizedAddress = listenAddress
+            .trim()
+            .ifEmpty { "0.0.0.0" }
+
         return withContext(UsbIpNative.nativeDispatcher) {
-            val success = UsbIpNative.startServer(port)
+            val success = UsbIpNative.startServer(port, normalizedAddress)
             if (success) {
                 this@UsbService.port = port
+                this@UsbService.listenAddress = normalizedAddress
                 serverRunning = true
                 updateNotification()
+                startListenAddressMonitor(normalizedAddress)
             }
             success
         }
     }
 
     suspend fun stopServer() {
+        // Invalide immédiatement le moniteur associé au démarrage courant.
+        listenMonitorGeneration.incrementAndGet()
+
         withContext(UsbIpNative.nativeDispatcher) {
             UsbIpNative.stopServer()
             serverRunning = false
@@ -247,6 +284,68 @@ class UsbService : Service() {
             activeDevices.remove(deviceName)?.connection?.close()
             Log.i(TAG, "Device detached: $deviceName")
             true
+        }
+    }
+
+    /**
+     * Surveille une adresse d'écoute ciblée même lorsque MainActivity est
+     * détruite. 0.0.0.0 n'a pas besoin de surveillance : ce mode représente
+     * volontairement toutes les interfaces.
+     */
+    private fun startListenAddressMonitor(address: String) {
+        val generation = listenMonitorGeneration.incrementAndGet()
+
+        if (address == NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS) {
+            return
+        }
+
+        Thread {
+            try {
+                while (
+                    serverRunning &&
+                    listenAddress == address &&
+                    listenMonitorGeneration.get() == generation
+                ) {
+                    Thread.sleep(2000)
+
+                    if (
+                        !serverRunning ||
+                        listenAddress != address ||
+                        listenMonitorGeneration.get() != generation
+                    ) {
+                        break
+                    }
+
+                    if (
+                        !NetworkInterfaceResolver.isAddressAvailable(
+                            applicationContext,
+                            address
+                        )
+                    ) {
+                        Log.w(
+                            TAG,
+                            "Listen address disappeared: $address; stopping USB/IP server"
+                        )
+
+                        runBlocking {
+                            stopServer()
+                        }
+
+                        break
+                    }
+                }
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (e: Exception) {
+                // Ne jamais faire tomber le foreground service à cause du
+                // moniteur. Le socket reste de toute façon lié à l'adresse
+                // précise ; il ne bascule pas vers 0.0.0.0.
+                Log.e(TAG, "Listen address monitor failed for $address", e)
+            }
+        }.apply {
+            name = "UsbIpListenAddressMonitor"
+            isDaemon = true
+            start()
         }
     }
 

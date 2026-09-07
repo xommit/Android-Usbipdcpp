@@ -1,7 +1,9 @@
 #include <jni.h>
 #include <android/log.h>
+#include <atomic>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <libusb-1.0/libusb.h>
 
 #include <spdlog/spdlog.h>
@@ -201,9 +203,44 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_bindUsbDeviceNative(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(JNIEnv* env, jobject thiz, jint port) {
+Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
+    JNIEnv* env,
+    jobject thiz,
+    jint port,
+    jstring listen_address_jstring) {
 
-    spdlog::info("Starting USB/IP server on port {}", port);
+    // 防御性默认值：Kotlin 层正常情况下始终传入非空字符串，
+    // 这里保留 0.0.0.0 作为兼容/安全兜底。
+    std::string listen_address = "0.0.0.0";
+
+    if (listen_address_jstring != nullptr) {
+        const char* listen_address_chars =
+            env->GetStringUTFChars(listen_address_jstring, nullptr);
+
+        if (listen_address_chars == nullptr) {
+            // OOM 等情况下避免继续使用空指针。
+            env->ExceptionClear();
+            spdlog::error("Failed to read listen address");
+            return JNI_FALSE;
+        }
+
+        listen_address.assign(listen_address_chars);
+        env->ReleaseStringUTFChars(
+            listen_address_jstring,
+            listen_address_chars
+        );
+
+        // 空字符串不应由 Kotlin 传入，但保留旧行为作为防御。
+        if (listen_address.empty()) {
+            listen_address = "0.0.0.0";
+        }
+    }
+
+    spdlog::info(
+        "Starting USB/IP server on {}:{}",
+        listen_address,
+        port
+    );
 
     if (!g_initialized) {
         spdlog::error("Native layer not initialized, initializing now...");
@@ -220,28 +257,68 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(JNIEnv* env, jobject thiz, j
     }
 
     try {
+        // 解析 Kotlin 传入的真实监听地址。
+        // 当前 Android UI/网络检测设计只使用 IPv4。
+        const asio::ip::address address =
+            asio::ip::make_address(listen_address);
+
+        if (!address.is_v4()) {
+            spdlog::error(
+                "Only IPv4 listen addresses are supported: {}",
+                listen_address
+            );
+            return JNI_FALSE;
+        }
+
         g_server = std::make_unique<usbipdcpp::LibusbServer>();
         g_server->set_hotplug_enabled(false);
-        asio::ip::tcp::endpoint endpoint(asio::ip::tcp::v4(), static_cast<unsigned short>(port));
-        // v1.0.8 起 start 不再抛异常，启动失败（如端口被占用）通过返回值报告
+
+        // 0.0.0.0 保留原有行为；具体 IPv4 则真正限制 socket
+        // 只监听该本地地址。
+        asio::ip::tcp::endpoint endpoint(
+            address,
+            static_cast<unsigned short>(port)
+        );
+
+        // v1.0.8 起 start 不再抛异常，启动失败（如端口被占用、
+        // 地址当前不存在等）通过返回值报告
         auto ec = g_server->start(endpoint);
         if (ec) {
-            spdlog::error("Failed to start server: {}", ec.message());
+            spdlog::error(
+                "Failed to start server on {}:{}: {}",
+                listen_address,
+                port,
+                ec.message()
+            );
             // start 失败路径内部已自清理（热插拔监控、libusb 事件线程），无需 stop 直接析构
             g_server.reset();
             return JNI_FALSE;
         }
+
         g_server_running = true;
-        spdlog::info("Server started successfully");
+        spdlog::info(
+            "Server started successfully on {}:{}",
+            listen_address,
+            port
+        );
         return JNI_TRUE;
+
     } catch (const std::exception& e) {
-        // make_unique 等构造路径的异常兜底（start 本身不再抛）
-        spdlog::error("Failed to start server: {}", e.what());
+        // make_address / make_unique 等构造路径的异常兜底。
+        // start 本身从 v1.0.8 起通过 error_code 报告失败。
+        spdlog::error(
+            "Failed to start server on {}:{}: {}",
+            listen_address,
+            port,
+            e.what()
+        );
+
         if (g_server) {
             try {
                 g_server->stop();
             } catch (...) {}
         }
+
         g_server.reset();
         return JNI_FALSE;
     }

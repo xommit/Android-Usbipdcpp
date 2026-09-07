@@ -41,11 +41,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -178,6 +182,213 @@ private fun nativeLogLevelName(level: Int): String? {
         4 -> "error"
         5 -> "critical"
         else -> null
+    }
+}
+
+/**
+ * Liste large des IPv4 locales affichables lorsque le serveur écoute sur
+ * 0.0.0.0 ("Toutes").
+ *
+ * Cette fonction ne sert JAMAIS à choisir l'interface de bind. La sélection
+ * VPN / Wi-Fi / Ethernet repose exclusivement sur NetworkInterfaceResolver et
+ * NetworkCapabilities. Ici on conserve seulement le comportement historique
+ * d'affichage, notamment pour USB tethering / RNDIS et certaines interfaces
+ * locales non représentées comme Network Android sélectionnable.
+ */
+private fun getAllClientIpv4Addresses(): List<NetworkAddress> {
+    return try {
+        val candidates = mutableListOf<NetworkAddress>()
+
+        val interfaces =
+            NetworkInterface.getNetworkInterfaces()
+                ?: return emptyList()
+
+        while (interfaces.hasMoreElements()) {
+            val networkInterface = interfaces.nextElement()
+
+            if (
+                networkInterface.isLoopback ||
+                !networkInterface.isUp
+            ) {
+                continue
+            }
+
+            val interfaceName =
+                networkInterface.name
+                    ?.takeIf { it.isNotBlank() }
+                    ?: continue
+
+            val lowerName =
+                interfaceName.lowercase(Locale.ROOT)
+
+            /*
+             * Conserver les exclusions historiques d'interfaces Android
+             * internes / traduction IPv4 / mobile qui ne sont pas utiles comme
+             * adresse USB/IP à présenter au client.
+             */
+            if (
+                lowerName.startsWith("clat") ||
+                lowerName.startsWith("v4-") ||
+                lowerName.startsWith("dummy") ||
+                lowerName.startsWith("sit") ||
+                lowerName.startsWith("ip6tnl") ||
+                lowerName.startsWith("rmnet")
+            ) {
+                continue
+            }
+
+            val priority = when {
+                lowerName.startsWith("wg") ||
+                    lowerName.startsWith("tun") ||
+                    lowerName.startsWith("vpn") -> 0
+
+                lowerName.startsWith("wlan") ||
+                    lowerName.startsWith("swlan") -> 1
+
+                lowerName.startsWith("eth") ||
+                    lowerName.startsWith("en") -> 2
+
+                lowerName.startsWith("rndis") ||
+                    lowerName.startsWith("usb") -> 3
+
+                else -> 10
+            }
+
+            val addresses = networkInterface.inetAddresses
+
+            while (addresses.hasMoreElements()) {
+                val address = addresses.nextElement()
+                val host = address.hostAddress ?: continue
+
+                if (
+                    address !is Inet4Address ||
+                    address.isLoopbackAddress ||
+                    address.isLinkLocalAddress ||
+                    host.startsWith("192.0.0.")
+                ) {
+                    continue
+                }
+
+                candidates += NetworkAddress(
+                    interfaceName = interfaceName,
+                    address = host,
+                    priority = priority
+                )
+            }
+        }
+
+        candidates
+            .distinctBy { it.address }
+            .sortedWith(
+                compareBy<NetworkAddress> { it.priority }
+                    .thenBy { it.interfaceName }
+            )
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to get client IPv4 addresses", e)
+        emptyList()
+    }
+}
+
+/*
+ * Textes réseau temporaires localisés ici pour ne pas rendre ce fichier
+ * dépendant de nouvelles ressources XML au même commit.
+ *
+ * Ils couvrent les trois langues actuellement proposées par l'application.
+ * Ils pourront être déplacés dans strings.xml dans une étape dédiée.
+ */
+private fun networkUiLanguage(context: Context): String {
+    return context.resources.configuration.locales[0].language
+}
+
+private fun listenInterfaceTypeLabel(
+    context: Context,
+    type: ListenInterfaceType
+): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> when (type) {
+            ListenInterfaceType.ALL -> "Toutes"
+            ListenInterfaceType.VPN -> "VPN"
+            ListenInterfaceType.WIFI -> "Wi-Fi"
+            ListenInterfaceType.ETHERNET -> "Ethernet"
+        }
+
+        "zh" -> when (type) {
+            ListenInterfaceType.ALL -> "全部"
+            ListenInterfaceType.VPN -> "VPN"
+            ListenInterfaceType.WIFI -> "Wi-Fi"
+            ListenInterfaceType.ETHERNET -> "以太网"
+        }
+
+        else -> when (type) {
+            ListenInterfaceType.ALL -> "All"
+            ListenInterfaceType.VPN -> "VPN"
+            ListenInterfaceType.WIFI -> "Wi-Fi"
+            ListenInterfaceType.ETHERNET -> "Ethernet"
+        }
+    }
+}
+
+private fun listenInterfaceFieldLabel(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Interface réseau du serveur"
+        "zh" -> "服务器网络接口"
+        else -> "Server network interface"
+    }
+}
+
+private fun allInterfacesLabel(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Toutes les interfaces (0.0.0.0)"
+        "zh" -> "所有接口 (0.0.0.0)"
+        else -> "All interfaces (0.0.0.0)"
+    }
+}
+
+private fun listenAddressFieldLabel(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Adresse d'écoute"
+        "zh" -> "监听地址"
+        else -> "Listen address"
+    }
+}
+
+private fun noListenAddressText(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Aucune adresse disponible"
+        "zh" -> "没有可用地址"
+        else -> "No address available"
+    }
+}
+
+private fun selectListenAddressText(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Sélectionner une adresse"
+        "zh" -> "选择地址"
+        else -> "Select an address"
+    }
+}
+
+private fun listenInterfaceUnavailableText(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "L'interface réseau sélectionnée n'est plus disponible."
+        "zh" -> "所选网络接口已不可用。"
+        else -> "The selected network interface is no longer available."
+    }
+}
+
+private fun serverStoppedNetworkLostText(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Interface réseau perdue : serveur USB/IP arrêté."
+        "zh" -> "网络接口已断开：USB/IP 服务器已停止。"
+        else -> "Network interface lost: USB/IP server stopped."
+    }
+}
+
+private fun defaultPortText(context: Context): String {
+    return when (networkUiLanguage(context)) {
+        "fr" -> "Défaut : 3240"
+        "zh" -> "默认：3240"
+        else -> "Default: 3240"
     }
 }
 
@@ -375,8 +586,57 @@ fun MainScreen(
     var isStarting by remember { mutableStateOf(false) }
     var isStopping by remember { mutableStateOf(false) }
     var portText by remember { mutableStateOf("3240") }
+
+    var portFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = portText,
+                selection = TextRange(portText.length)
+            )
+        )
+    }
+
     var devices by remember { mutableStateOf(mapOf<String, UsbDevice>()) }
     var boundDevices by remember { mutableStateOf(setOf<String>()) }
+
+    /*
+     * Sélection réelle de l'interface d'écoute.
+     *
+     * Le type est stocké sous forme de String pour que rememberSaveable puisse
+     * le restaurer sans Saver personnalisé lors d'une recréation d'Activity.
+     */
+    var selectedListenTypeName by rememberSaveable {
+        mutableStateOf(ListenInterfaceType.ALL.name)
+    }
+    var selectedListenAddress by rememberSaveable {
+        mutableStateOf(NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS)
+    }
+    var availableListenAddresses by remember {
+        mutableStateOf<List<ListenAddressOption>>(emptyList())
+    }
+    var allClientIpAddresses by remember {
+        mutableStateOf<List<NetworkAddress>>(emptyList())
+    }
+
+    val selectedListenType = remember(selectedListenTypeName) {
+        runCatching {
+            ListenInterfaceType.valueOf(selectedListenTypeName)
+        }.getOrDefault(ListenInterfaceType.ALL)
+    }
+
+    val validPort =
+        portText.toIntOrNull()
+            ?.takeIf { it in 1024..65535 }
+
+    LaunchedEffect(portText) {
+        if (portFieldValue.text != portText) {
+            portFieldValue = TextFieldValue(
+                text = portText,
+                selection = TextRange(portText.length)
+            )
+        }
+    }
+
 
     /*
      * État de permission USB par deviceName.
@@ -417,14 +677,30 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
 
     // 页面导航：
-    // 0 = 服务器 / USB 设备
-    // 1 = 日志
+    // 0 = 服务器控制
+    // 1 = USB 状态 / 设备（主页面）
+    // 2 = 日志
+    //
+    // La page USB reste la page principale même si la page de contrôle
+    // est placée avant elle dans l'ordre de navigation.
     val pagerState = rememberPagerState(
-        initialPage = 0,
-        pageCount = { 2 }
+        initialPage = 1,
+        pageCount = { 3 }
     )
 
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+
+    /*
+     * Quand l'utilisateur quitte la page de contrôle du serveur, libérer le
+     * focus du champ Port. Cela ferme également le clavier et évite que le
+     * champ reste visuellement en mode édition sur les autres pages.
+     */
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != 0) {
+            focusManager.clearFocus(force = true)
+        }
+    }
 
     /*
      * IMPORTANT : les entrées sont conservées brutes dans le ViewModel et
@@ -726,130 +1002,242 @@ fun MainScreen(
             serverRunning = service.serverRunning
             boundDevices = service.boundDeviceNames
             portText = service.port.toString()
-        }
-    }
 
-    // 获取所有适合客户端连接的 IPv4 地址。
-    // 服务器监听 0.0.0.0，因此 Wi-Fi、VPN、Ethernet 等地址都可能可用。
-    fun getDeviceIpAddresses(): List<NetworkAddress> {
-        return try {
-            val candidates = mutableListOf<NetworkAddress>()
-
-            val interfaces =
-                NetworkInterface.getNetworkInterfaces()
-                    ?: return emptyList()
-
-            while (interfaces.hasMoreElements()) {
-                val networkInterface = interfaces.nextElement()
+            if (service.serverRunning) {
+                selectedListenAddress = service.listenAddress
 
                 if (
-                    networkInterface.isLoopback ||
-                    !networkInterface.isUp
+                    service.listenAddress ==
+                    NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
                 ) {
-                    continue
-                }
-
-                val ifName =
-                    networkInterface.name
-                        ?.lowercase(Locale.getDefault())
-                        ?: continue
-
-                // Android 内部/移动网络接口不适合作为 USB/IP 客户端地址显示。
-                if (
-                    ifName.startsWith("clat") ||
-                    ifName.startsWith("v4-") ||
-                    ifName.startsWith("dummy") ||
-                    ifName.startsWith("sit") ||
-                    ifName.startsWith("ip6tnl") ||
-                    ifName.startsWith("rmnet")
-                ) {
-                    continue
-                }
-
-                val priority = when {
-                    // WireGuard / VPN
-                    ifName.startsWith("wg") -> 0
-                    ifName.startsWith("tun") -> 0
-                    ifName.startsWith("vpn") -> 0
-
-                    // Wi-Fi
-                    ifName.startsWith("wlan") -> 1
-                    ifName.startsWith("swlan") -> 1
-
-                    // Ethernet
-                    ifName.startsWith("eth") -> 2
-                    ifName.startsWith("en") -> 2
-
-                    // USB / tethering
-                    ifName.startsWith("rndis") -> 3
-                    ifName.startsWith("usb") -> 3
-
-                    else -> 10
-                }
-
-                val addresses = networkInterface.inetAddresses
-
-                while (addresses.hasMoreElements()) {
-                    val address = addresses.nextElement()
-                    val host = address.hostAddress ?: continue
-
-                    if (
-                        address !is Inet4Address ||
-                        address.isLoopbackAddress ||
-                        address.isLinkLocalAddress ||
-                        host.startsWith("192.0.0.")
-                    ) {
-                        continue
-                    }
-
-                    candidates.add(
-                        NetworkAddress(
-                            interfaceName =
-                                networkInterface.name ?: ifName,
-                            address = host,
-                            priority = priority
-                        )
-                    )
+                    selectedListenTypeName =
+                        ListenInterfaceType.ALL.name
+                } else {
+                    availableListenAddresses
+                        .firstOrNull {
+                            it.address == service.listenAddress
+                        }
+                        ?.let {
+                            selectedListenTypeName =
+                                it.type.name
+                        }
                 }
             }
-
-            candidates
-                .distinctBy { it.address }
-                .sortedWith(
-                    compareBy<NetworkAddress> { it.priority }
-                        .thenBy { it.interfaceName }
-                )
-        } catch (e: Exception) {
-            Log.e(
-                TAG,
-                "Failed to get IP addresses",
-                e
-            )
-
-            emptyList()
         }
     }
 
-    val ipAddresses = remember {
-        mutableStateOf<List<NetworkAddress>>(emptyList())
-    }
-
-    // 刷新地址：VPN 在服务器已运行时启用/禁用，也会自动更新界面。
-    LaunchedEffect(serverRunning) {
-        if (!serverRunning) {
-            ipAddresses.value = emptyList()
-            return@LaunchedEffect
-        }
-
+    /*
+     * Actualise périodiquement les réseaux Android, même lorsque le serveur
+     * est arrêté, afin que l'utilisateur puisse sélectionner une interface
+     * avant le démarrage.
+     */
+    LaunchedEffect(Unit) {
         while (true) {
-            ipAddresses.value =
+            availableListenAddresses =
+                NetworkInterfaceResolver.getAvailableAddresses(context)
+
+            allClientIpAddresses =
                 withContext(Dispatchers.IO) {
-                    getDeviceIpAddresses()
+                    getAllClientIpv4Addresses()
                 }
 
             delay(2000)
         }
     }
+
+    /*
+     * Quand le type change et que le serveur est arrêté :
+     * - ALL sélectionne toujours 0.0.0.0 ;
+     * - un type avec une seule IPv4 est sélectionné automatiquement ;
+     * - plusieurs IPv4 exigent un choix explicite.
+     */
+    LaunchedEffect(
+        selectedListenType,
+        availableListenAddresses,
+        serverRunning
+    ) {
+        if (serverRunning) {
+            return@LaunchedEffect
+        }
+
+        if (selectedListenType == ListenInterfaceType.ALL) {
+            selectedListenAddress =
+                NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
+            return@LaunchedEffect
+        }
+
+        val candidates =
+            availableListenAddresses.filter {
+                it.type == selectedListenType
+            }
+
+        if (
+            candidates.none {
+                it.address == selectedListenAddress
+            }
+        ) {
+            selectedListenAddress =
+                if (candidates.size == 1) {
+                    candidates.first().address
+                } else {
+                    ""
+                }
+        }
+    }
+
+    /*
+     * Si une Activity est recréée pendant qu'un serveur est déjà actif,
+     * availableListenAddresses peut arriver après refreshState(). Dès qu'elle
+     * est disponible, retrouver le type correspondant à l'adresse réellement
+     * utilisée par le Service.
+     */
+    LaunchedEffect(
+        serverRunning,
+        availableListenAddresses,
+        usbService?.listenAddress
+    ) {
+        val service = usbService ?: return@LaunchedEffect
+
+        if (!serverRunning) {
+            return@LaunchedEffect
+        }
+
+        val activeAddress = service.listenAddress
+
+        if (
+            activeAddress ==
+            NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
+        ) {
+            selectedListenTypeName =
+                ListenInterfaceType.ALL.name
+        } else {
+            availableListenAddresses
+                .firstOrNull {
+                    it.address == activeAddress
+                }
+                ?.let {
+                    selectedListenTypeName =
+                        it.type.name
+                    selectedListenAddress =
+                        it.address
+                }
+        }
+    }
+
+    /*
+     * Protection active : si l'interface réellement utilisée disparaît après
+     * le démarrage (VPN coupé, Wi-Fi perdu, câble Ethernet retiré), arrêter le
+     * serveur au lieu de laisser l'utilisateur croire qu'il écoute encore sur
+     * cette interface.
+     */
+    LaunchedEffect(
+        serverRunning,
+        selectedListenType,
+        selectedListenAddress,
+        usbService
+    ) {
+        if (
+            !serverRunning ||
+            selectedListenType == ListenInterfaceType.ALL ||
+            selectedListenAddress.isBlank()
+        ) {
+            return@LaunchedEffect
+        }
+
+        while (serverRunning) {
+            delay(2000)
+
+            val stillAvailable =
+                NetworkInterfaceResolver.isListenAddressAvailable(
+                    context = context,
+                    type = selectedListenType,
+                    address = selectedListenAddress
+                )
+
+            if (!stillAvailable) {
+                val service = usbService
+
+                if (service != null && service.serverRunning) {
+                    isStopping = true
+                    service.stopServer()
+                    isStopping = false
+                }
+
+                serverRunning = false
+                boundDevices = emptySet()
+
+                addLog(
+                    message = "USB/IP server stopped",
+                    level = 3
+                )
+
+                Toast.makeText(
+                    context,
+                    serverStoppedNetworkLostText(context),
+                    Toast.LENGTH_LONG
+                ).show()
+
+                break
+            }
+        }
+    }
+
+    /*
+     * Adresses réellement utiles au client :
+     * - mode ALL : conserver la liste large historique des IPv4 locales
+     *   affichables (VPN, Wi-Fi, Ethernet, USB/RNDIS, etc.) ;
+     * - mode ciblé : afficher uniquement l'adresse sur laquelle le socket
+     *   natif est réellement lié.
+     */
+    val statusIpAddresses =
+        if (!serverRunning) {
+            emptyList()
+        } else {
+            val activeAddress =
+                usbService?.listenAddress
+                    ?: selectedListenAddress
+
+            if (
+                activeAddress ==
+                NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
+            ) {
+                allClientIpAddresses
+            } else {
+                availableListenAddresses
+                    .filter { it.address == activeAddress }
+                    .map { option ->
+                        val priority = when (option.type) {
+                            ListenInterfaceType.VPN -> 0
+                            ListenInterfaceType.WIFI -> 1
+                            ListenInterfaceType.ETHERNET -> 2
+                            ListenInterfaceType.ALL -> 10
+                        }
+
+                        val typeLabel =
+                            listenInterfaceTypeLabel(
+                                context,
+                                option.type
+                            )
+
+                        val interfaceLabel =
+                            option.interfaceName
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { "$typeLabel • $it" }
+                                ?: typeLabel
+
+                        NetworkAddress(
+                            interfaceName = interfaceLabel,
+                            address = option.address,
+                            priority = priority
+                        )
+                    }
+                    .distinctBy { it.address }
+                    .sortedWith(
+                        compareBy<NetworkAddress> { it.priority }
+                            .thenBy { it.interfaceName }
+                    )
+            }
+        }
 
     // 设置native日志回调
     DisposableEffect(Unit) {
@@ -1068,7 +1456,7 @@ fun MainScreen(
                     .weight(1f)
             ) { page ->
                 when (page) {
-                    // Page 1 : serveur et périphériques USB
+                    // Page 0 : contrôle du serveur (placée avant la page principale)
                     0 -> {
                         Column(
                             modifier = Modifier
@@ -1085,10 +1473,83 @@ fun MainScreen(
                                 serverRunning = serverRunning,
                                 isStarting = isStarting,
                                 isStopping = isStopping,
-                                portText = portText,
-                                onPortChange = { portText = it },
+                                portText = portFieldValue,
+                                onPortChange = { value ->
+                                    val digitsOnly =
+                                        value.text
+                                            .filter { c -> c.isDigit() }
+                                            .take(5)
+
+                                    portText = digitsOnly
+
+                                    val coercedSelectionStart =
+                                        value.selection.start
+                                            .coerceIn(0, digitsOnly.length)
+                                    val coercedSelectionEnd =
+                                        value.selection.end
+                                            .coerceIn(0, digitsOnly.length)
+
+                                    portFieldValue = TextFieldValue(
+                                        text = digitsOnly,
+                                        selection = TextRange(
+                                            coercedSelectionStart,
+                                            coercedSelectionEnd
+                                        )
+                                    )
+                                },
+                                listenType = selectedListenType,
+                                availableListenAddresses = availableListenAddresses,
+                                selectedListenAddress = selectedListenAddress,
+                                onListenTypeChange = { newType ->
+                                    selectedListenTypeName =
+                                        newType.name
+
+                                    selectedListenAddress =
+                                        if (
+                                            newType ==
+                                            ListenInterfaceType.ALL
+                                        ) {
+                                            NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
+                                        } else {
+                                            ""
+                                        }
+                                },
+                                onListenAddressChange = {
+                                    selectedListenAddress = it
+                                }
+                            )
+                        }
+                    }
+
+                    // Page 1 : statut et périphériques USB — page principale
+                    1 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            ServerActionButton(
+                                serverRunning = serverRunning,
+                                isStarting = isStarting,
+                                isStopping = isStopping,
+                                canStart =
+                                    validPort != null &&
+                                        (
+                                            selectedListenType ==
+                                                ListenInterfaceType.ALL ||
+                                                selectedListenAddress.isNotBlank()
+                                        ),
                                 onStart = {
-                                    val port = portText.toIntOrNull() ?: 3240
+                                    val port =
+                                        validPort
+                                            ?: return@ServerActionButton
+
                                     val service = usbService
 
                                     if (service == null) {
@@ -1097,7 +1558,7 @@ fun MainScreen(
                                             context.getString(R.string.service_not_ready),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
                                     }
 
                                     if (!service.nativeReady) {
@@ -1106,14 +1567,61 @@ fun MainScreen(
                                             context.getString(R.string.native_init_failed),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
+                                    }
+
+                                    /*
+                                     * Revalider l'interface juste avant le
+                                     * démarrage pour éviter tout fallback
+                                     * silencieux vers 0.0.0.0.
+                                     */
+                                    val listenAddress =
+                                        NetworkInterfaceResolver.resolveListenAddress(
+                                            context = context,
+                                            type = selectedListenType,
+                                            preferredAddress =
+                                                selectedListenAddress
+                                                    .takeIf { it.isNotBlank() }
+                                        )
+
+                                    if (listenAddress == null) {
+                                        Toast.makeText(
+                                            context,
+                                            listenInterfaceUnavailableText(context),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerActionButton
+                                    }
+
+                                    if (
+                                        !NetworkInterfaceResolver.isListenAddressAvailable(
+                                            context = context,
+                                            type = selectedListenType,
+                                            address = listenAddress
+                                        )
+                                    ) {
+                                        Toast.makeText(
+                                            context,
+                                            listenInterfaceUnavailableText(context),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@ServerActionButton
                                     }
 
                                     isStarting = true
+
                                     scope.launch {
-                                        val success = service.startServer(port)
+                                        val success =
+                                            service.startServer(
+                                                port = port,
+                                                listenAddress = listenAddress
+                                            )
+
                                         isStarting = false
+
                                         if (success) {
+                                            selectedListenAddress =
+                                                listenAddress
                                             serverRunning = true
                                         }
                                     }
@@ -1127,10 +1635,11 @@ fun MainScreen(
                                             context.getString(R.string.service_not_ready),
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        return@ServerControlPanel
+                                        return@ServerActionButton
                                     }
 
                                     isStopping = true
+
                                     scope.launch {
                                         service.stopServer()
                                         isStopping = false
@@ -1143,8 +1652,11 @@ fun MainScreen(
                             StatusCard(
                                 serverRunning = serverRunning,
                                 boundCount = boundDevices.size,
-                                ipAddresses = ipAddresses.value,
-                                port = portText.toIntOrNull() ?: 3240
+                                ipAddresses = statusIpAddresses,
+                                port =
+                                    usbService?.port
+                                        ?: validPort
+                                        ?: 0
                             )
 
                             DeviceListSection(
@@ -1255,7 +1767,7 @@ fun MainScreen(
                     }
 
                     // Page 2 : journal
-                    1 -> {
+                    2 -> {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1297,7 +1809,7 @@ fun MainScreen(
 
             // Bulles fixes en bas : appui ou swipe pour changer de page.
             PageIndicator(
-                pageCount = 2,
+                pageCount = 3,
                 currentPage = pagerState.currentPage,
                 onPageSelected = { page ->
                     scope.launch {
@@ -1401,11 +1913,16 @@ fun ServerControlPanel(
     serverRunning: Boolean,
     isStarting: Boolean,
     isStopping: Boolean,
-    portText: String,
-    onPortChange: (String) -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit
+    portText: TextFieldValue,
+    onPortChange: (TextFieldValue) -> Unit,
+    listenType: ListenInterfaceType,
+    availableListenAddresses: List<ListenAddressOption>,
+    selectedListenAddress: String,
+    onListenTypeChange: (ListenInterfaceType) -> Unit,
+    onListenAddressChange: (String) -> Unit
 ) {
+    val context = LocalContext.current
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1416,69 +1933,352 @@ fun ServerControlPanel(
                 style = MaterialTheme.typography.titleMedium
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            /*
+             * Sélection de l'interface d'écoute.
+             *
+             * "Toutes" reste séparé en haut et correspond à 0.0.0.0.
+             * VPN / Wi-Fi / Ethernet sont ensuite présentés chacun dans leur
+             * propre bloc, avec une puce par IPv4 réellement disponible.
+             *
+             * Une seule puce peut être sélectionnée à la fois.
+             */
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Text(
+                    text = listenInterfaceFieldLabel(context),
+                    style = MaterialTheme.typography.titleSmall
+                )
+
+                val canChangeListenInterface =
+                    !serverRunning &&
+                        !isStarting &&
+                        !isStopping
+
+                /*
+                 * Choix global : écoute sur toutes les interfaces IPv4.
+                 */
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                enabled = canChangeListenInterface
+                            ) {
+                                onListenTypeChange(
+                                    ListenInterfaceType.ALL
+                                )
+                            }
+                            .padding(
+                                horizontal = 12.dp,
+                                vertical = 8.dp
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected =
+                                listenType ==
+                                    ListenInterfaceType.ALL,
+                            onClick = {
+                                if (canChangeListenInterface) {
+                                    onListenTypeChange(
+                                        ListenInterfaceType.ALL
+                                    )
+                                }
+                            },
+                            enabled = canChangeListenInterface
+                        )
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        Text(
+                            text = allInterfacesLabel(context),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(
+                            MaterialTheme.colorScheme.outlineVariant
+                        )
+                )
+
+                /*
+                 * Un bloc distinct par transport. Chaque IPv4 est directement
+                 * une option radio : aucun menu d'adresse supplémentaire.
+                 */
+                listOf(
+                    ListenInterfaceType.VPN,
+                    ListenInterfaceType.WIFI,
+                    ListenInterfaceType.ETHERNET
+                ).forEach { type ->
+                    val addresses =
+                        availableListenAddresses
+                            .filter { it.type == type }
+                            .distinctBy { it.address }
+                            .sortedWith(
+                                compareBy<ListenAddressOption> {
+                                    it.interfaceName.orEmpty()
+                                }.thenBy {
+                                    it.address
+                                }
+                            )
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement =
+                                Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = listenInterfaceTypeLabel(
+                                    context,
+                                    type
+                                ),
+                                style =
+                                    MaterialTheme.typography.titleSmall
+                            )
+
+                            if (addresses.isEmpty()) {
+                                Text(
+                                    text = noListenAddressText(context),
+                                    style =
+                                        MaterialTheme.typography.bodyMedium,
+                                    color =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant
+                                )
+                            } else {
+                                addresses.forEach { option ->
+                                    val isSelected =
+                                        listenType == type &&
+                                            selectedListenAddress ==
+                                                option.address
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable(
+                                                enabled =
+                                                    canChangeListenInterface
+                                            ) {
+                                                /*
+                                                 * Le callback de type remet
+                                                 * d'abord l'adresse à vide ;
+                                                 * le callback suivant fixe
+                                                 * immédiatement l'IPv4 choisie.
+                                                 */
+                                                onListenTypeChange(type)
+                                                onListenAddressChange(
+                                                    option.address
+                                                )
+                                            }
+                                            .padding(vertical = 2.dp),
+                                        verticalAlignment =
+                                            Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                if (
+                                                    canChangeListenInterface
+                                                ) {
+                                                    onListenTypeChange(type)
+                                                    onListenAddressChange(
+                                                        option.address
+                                                    )
+                                                }
+                                            },
+                                            enabled =
+                                                canChangeListenInterface
+                                        )
+
+                                        Spacer(
+                                            modifier =
+                                                Modifier.width(6.dp)
+                                        )
+
+                                        Text(
+                                            text = option.interfaceName
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?.let { interfaceName ->
+                                                    "$interfaceName • ${option.address}"
+                                                }
+                                                ?: option.address,
+                                            style =
+                                                MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        MaterialTheme.colorScheme.outlineVariant
+                    )
+            )
+
+            val portEditable =
+                !serverRunning &&
+                    !isStarting &&
+                    !isStopping
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "${stringResource(R.string.port)} TCP",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (portEditable) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+
+                    Text(
+                        text = defaultPortText(context),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
                 OutlinedTextField(
                     value = portText,
-                    onValueChange = {
-                        onPortChange(it.filter { c -> c.isDigit() })
-                    },
-                    label = { Text(stringResource(R.string.port)) },
+                    onValueChange = onPortChange,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number
                     ),
-                    modifier = Modifier.width(100.dp),
-                    enabled = !serverRunning && !isStarting,
-                    singleLine = true
+                    modifier = Modifier
+                        .width(88.dp)
+                        .onFocusChanged { focusState ->
+                            if (
+                                focusState.isFocused &&
+                                    portText.text.isNotEmpty() &&
+                                    portText.selection != TextRange(
+                                        0,
+                                        portText.text.length
+                                    )
+                            ) {
+                                onPortChange(
+                                    portText.copy(
+                                        selection = TextRange(
+                                            0,
+                                            portText.text.length
+                                        )
+                                    )
+                                )
+                            }
+                        },
+                    enabled = portEditable,
+                    singleLine = true,
+                    isError =
+                        portText.text.isNotEmpty() &&
+                            (
+                                portText.text.toIntOrNull()
+                                    ?.let { it !in 1024..65535 }
+                                    ?: true
+                            ),
+                    textStyle =
+                        MaterialTheme.typography.bodyMedium
                 )
 
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(8.dp))
 
-                if (serverRunning || isStopping) {
-                    Button(
-                        onClick = onStop,
-                        enabled = !isStopping,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (isStopping) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onError
-                                )
-                                Text(stringResource(R.string.stopping))
-                            } else {
-                                Text(stringResource(R.string.stop_server))
-                            }
-                        }
-                    }
+                Text(
+                    text = "(1024 - 65535)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ServerActionButton(
+    serverRunning: Boolean,
+    isStarting: Boolean,
+    isStopping: Boolean,
+    canStart: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
+    if (serverRunning || isStopping) {
+        Button(
+            onClick = onStop,
+            enabled = !isStopping,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isStopping) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onError
+                    )
+                    Text(stringResource(R.string.stopping))
                 } else {
-                    Button(onClick = onStart, enabled = !isStarting) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (isStarting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Text(stringResource(R.string.starting))
-                            } else {
-                                Text(stringResource(R.string.start_server))
-                            }
-                        }
-                    }
+                    Text(stringResource(R.string.stop_server))
+                }
+            }
+        }
+    } else {
+        Button(
+            onClick = onStart,
+            enabled = !isStarting && canStart,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isStarting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Text(stringResource(R.string.starting))
+                } else {
+                    Text(stringResource(R.string.start_server))
                 }
             }
         }
