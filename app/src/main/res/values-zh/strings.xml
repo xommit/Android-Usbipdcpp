@@ -12,6 +12,19 @@
     <string name="starting">启动中…</string>
     <string name="stopping">停止中…</string>
 
+    <!-- Network Interface -->
+    <string name="network_all">全部</string>
+    <string name="server_network_interface">服务器网络接口</string>
+    <string name="all_network_interfaces">所有接口 (0.0.0.0)</string>
+    <string name="network_vpn">VPN</string>
+    <string name="network_wifi">Wi-Fi</string>
+    <string name="network_ethernet">以太网</string>
+    <string name="no_network_address">没有可用地址</string>
+    <string name="network_interface_unavailable">所选网络接口已不可用。</string>
+    <string name="network_lost_server_stopped">网络接口已断开：USB/IP 服务器已停止。</string>
+    <string name="port_tcp">TCP 端口</string>
+    <string name="default_port">默认：3240</string>
+
     <!-- Status -->
     <string name="server_running">服务器运行中</string>
     <string name="server_stopped">服务器已停止</string>

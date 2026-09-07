@@ -12,6 +12,20 @@
     <string name="starting">Starting…</string>
     <string name="stopping">Stopping…</string>
 
+    <!-- Network Interface -->
+    <string name="network_all">All</string>
+    <string name="server_network_interface">Server network interface</string>
+    <string name="all_network_interfaces">All interfaces (0.0.0.0)</string>
+    <string name="network_vpn">VPN</string>
+    <string name="network_wifi">Wi-Fi</string>
+    <string name="network_ethernet">Ethernet</string>
+    <string name="no_network_address">No address available</string>
+    <string name="network_interface_unavailable">The selected network interface is no longer available.</string>
+    <string name="network_lost_server_stopped">Network interface lost: USB/IP server stopped.</string>
+    <string name="port_tcp">TCP Port</string>
+    <string name="default_port">Default: 3240</string>
+    <string name="port_range" translatable="false">(1024 - 65535)</string>
+
     <!-- Status -->
     <string name="server_running">Server Running</string>
     <string name="server_stopped">Server Stopped</string>
