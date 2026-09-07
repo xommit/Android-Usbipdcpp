@@ -12,6 +12,19 @@
     <string name="starting">Démarrage…</string>
     <string name="stopping">Arrêt…</string>
 
+    <!-- Network Interface -->
+    <string name="network_all">Toutes</string>
+    <string name="server_network_interface">Interface réseau du serveur</string>
+    <string name="all_network_interfaces">Toutes les interfaces (0.0.0.0)</string>
+    <string name="network_vpn">VPN</string>
+    <string name="network_wifi">Wi-Fi</string>
+    <string name="network_ethernet">Ethernet</string>
+    <string name="no_network_address">Aucune adresse disponible</string>
+    <string name="network_interface_unavailable">L’interface réseau sélectionnée n’est plus disponible.</string>
+    <string name="network_lost_server_stopped">Interface réseau perdue : serveur USB/IP arrêté.</string>
+    <string name="port_tcp">Port TCP</string>
+    <string name="default_port">Défaut : 3240</string>
+
     <!-- État -->
     <string name="server_running">Serveur en cours d’exécution</string>
     <string name="server_stopped">Serveur arrêté</string>
