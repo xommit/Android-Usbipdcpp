@@ -7,7 +7,7 @@
 #include <string>
 #include <utility>
 
-// 自定义 sink，通过 JNI 回调把日志传到 Kotlin。
+// 自定义sink，通过JNI回调把日志传到Kotlin
 // 这里只传递原始日志消息（payload），不再使用 spdlog formatter。
 // 时间戳和日志级别由 Android/Kotlin 侧统一格式化，避免重复显示。
 template<typename Mutex>

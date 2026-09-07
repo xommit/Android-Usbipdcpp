@@ -280,8 +280,8 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
             static_cast<unsigned short>(port)
         );
 
-        // v1.0.8 起 start 不再抛异常，启动失败（如端口被占用、
-        // 地址当前不存在等）通过返回值报告
+        // v1.0.8 起 start 不再抛异常，启动失败（如端口被占用）通过返回值报告
+        // The current implementation can also report an unavailable listen address.
         auto ec = g_server->start(endpoint);
         if (ec) {
             spdlog::error(
@@ -304,8 +304,8 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
         return JNI_TRUE;
 
     } catch (const std::exception& e) {
-        // make_address / make_unique 等构造路径的异常兜底。
-        // start 本身从 v1.0.8 起通过 error_code 报告失败。
+        // make_unique 等构造路径的异常兜底（start 本身不再抛）
+        // make_address can also throw before server startup.
         spdlog::error(
             "Failed to start server on {}:{}: {}",
             listen_address,
