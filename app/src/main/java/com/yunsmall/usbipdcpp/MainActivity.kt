@@ -1704,7 +1704,8 @@ fun MainScreen(
 
                             StatusCard(
                                 serverRunning = serverRunning,
-                                boundCount = boundDevices.size,
+                                physicalBoundCount = boundDevices.size,
+                                virtualBoundCount = if (serverRunning) 1 else 0,
                                 ipAddresses = statusIpAddresses,
                                 port =
                                     usbService?.port
@@ -2378,7 +2379,8 @@ fun ServerActionButton(
 @Composable
 fun StatusCard(
     serverRunning: Boolean,
-    boundCount: Int,
+    physicalBoundCount: Int,
+    virtualBoundCount: Int,
     ipAddresses: List<NetworkAddress>,
     port: Int
 ) {
@@ -2443,7 +2445,15 @@ fun StatusCard(
                         Text(
                             text = stringResource(
                                 R.string.devices_bound,
-                                boundCount
+                                physicalBoundCount
+                            ),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Text(
+                            text = stringResource(
+                                R.string.virtual_devices_bound,
+                                virtualBoundCount
                             ),
                             style = MaterialTheme.typography.bodySmall
                         )
