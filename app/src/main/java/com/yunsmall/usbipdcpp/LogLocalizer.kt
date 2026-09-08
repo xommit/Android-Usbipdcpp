@@ -115,6 +115,49 @@ object LogLocalizer {
         }
 
         Regex(
+            """^Virtual BD-ROM registered:\s*busid=(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            return context.getString(
+                R.string.log_virtual_optical_registered,
+                match.groupValues[1]
+            )
+        }
+
+        Regex(
+            """^Virtual optical media mounted:\s*(\d+)\s+bytes$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val size = match.groupValues[1].toLongOrNull() ?: return@let
+            return context.getString(
+                R.string.log_virtual_optical_mounted,
+                size
+            )
+        }
+
+        Regex(
+            """^Cannot mount virtual optical media:\s*invalid fd=(-?\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_virtual_optical_invalid_fd,
+                fd
+            )
+        }
+
+        Regex(
+            """^Failed to mount virtual optical media from fd=(-?\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_virtual_optical_mount_failed,
+                fd
+            )
+        }
+
+        Regex(
             """^Binding USB device:\s*fd=(\d+),\s*vid=(0x[0-9A-Fa-f]+),\s*pid=(0x[0-9A-Fa-f]+)$""",
             RegexOption.IGNORE_CASE
         ).matchEntire(message)?.let { match ->
@@ -255,6 +298,12 @@ object LogLocalizer {
                 return context.getString(
                     R.string.log_device_unbound_successfully
                 )
+
+            "Virtual optical media ejected" ->
+                return context.getString(R.string.log_virtual_optical_ejected)
+
+            "Failed to register virtual BD-ROM" ->
+                return context.getString(R.string.log_virtual_optical_register_failed)
 
             "USB/IP session started" ->
                 return context.getString(R.string.log_session_started)

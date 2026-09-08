@@ -43,6 +43,13 @@ object UsbIpNative {
 
     external fun stopServer()
     external fun isServerRunning(): Boolean
+
+    external fun mountVirtualOpticalNative(fd: Int): Boolean
+    external fun ejectVirtualOpticalNative()
+    external fun isVirtualOpticalMediaMountedNative(): Boolean
+    external fun getVirtualOpticalMediaSizeNative(): Long
+    external fun getVirtualOpticalBusidNative(): String
+
     external fun release()
 
     /**

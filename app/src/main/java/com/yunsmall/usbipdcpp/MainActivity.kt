@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.text.format.Formatter
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -569,6 +570,11 @@ fun MainScreen(
     var showLanguageMenu by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var busyDevices by remember { mutableStateOf(setOf<String>()) }
+    var virtualOpticalMounted by remember { mutableStateOf(false) }
+    var virtualOpticalMediaName by remember { mutableStateOf<String?>(null) }
+    var virtualOpticalMediaSize by remember { mutableLongStateOf(0L) }
+    var virtualOpticalBusid by remember { mutableStateOf<String?>(null) }
+    var virtualOpticalBusy by remember { mutableStateOf(false) }
 
     /*
      * Pour une caméra USB, Android peut demander CAMERA avant la permission
@@ -587,13 +593,14 @@ fun MainScreen(
     // 页面导航：
     // 0 = 服务器控制
     // 1 = USB 状态 / 设备（主页面）
-    // 2 = 日志
+    // 2 = Virtual optical drive
+    // 3 = Log
     //
     // La page USB reste la page principale même si la page de contrôle
     // est placée avant elle dans l'ordre de navigation.
     val pagerState = rememberPagerState(
         initialPage = 1,
-        pageCount = { 3 }
+        pageCount = { 4 }
     )
 
     val context = LocalContext.current
@@ -635,6 +642,108 @@ fun MainScreen(
     // 的实例），必须经 rememberUpdatedState 读最新 usbService，否则授权后拿到
     // 的是服务绑定前的 null 快照，绑定必然失败
     val currentUsbService by rememberUpdatedState(usbService)
+
+    fun syncVirtualOpticalState(service: UsbService?) {
+        virtualOpticalMounted = service?.virtualOpticalMediaMounted ?: false
+        virtualOpticalMediaName = service?.virtualOpticalMediaName
+        virtualOpticalMediaSize = service?.virtualOpticalMediaSize ?: 0L
+        virtualOpticalBusid = service?.virtualOpticalBusid
+    }
+
+    val opticalDocumentLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri == null) {
+                return@rememberLauncherForActivityResult
+            }
+
+            val service = currentUsbService
+            if (service == null) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.service_not_ready),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@rememberLauncherForActivityResult
+            }
+
+            if (!service.nativeReady) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.native_init_failed),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@rememberLauncherForActivityResult
+            }
+
+            scope.launch {
+                virtualOpticalBusy = true
+                try {
+                    val mounted = service.mountVirtualOptical(uri)
+                    syncVirtualOpticalState(service)
+
+                    Toast.makeText(
+                        context,
+                        context.getString(
+                            if (mounted) {
+                                R.string.virtual_optical_mount_success
+                            } else {
+                                R.string.virtual_optical_mount_failed
+                            }
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } finally {
+                    virtualOpticalBusy = false
+                }
+            }
+        }
+
+    fun remountVirtualOptical() {
+        val service = currentUsbService ?: return
+
+        scope.launch {
+            virtualOpticalBusy = true
+            try {
+                val mounted = service.remountVirtualOptical()
+                syncVirtualOpticalState(service)
+
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        if (mounted) {
+                            R.string.virtual_optical_mount_success
+                        } else {
+                            R.string.virtual_optical_mount_failed
+                        }
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } finally {
+                virtualOpticalBusy = false
+            }
+        }
+    }
+
+    fun ejectVirtualOptical() {
+        val service = currentUsbService ?: return
+
+        scope.launch {
+            virtualOpticalBusy = true
+            try {
+                service.ejectVirtualOptical()
+                syncVirtualOpticalState(service)
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.virtual_optical_eject_success),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } finally {
+                virtualOpticalBusy = false
+            }
+        }
+    }
 
     /*
      * Exécute réellement le bind natif.
@@ -910,30 +1019,35 @@ fun MainScreen(
     }
 
     fun refreshState() {
-        usbService?.let { service ->
-            serverRunning = service.serverRunning
-            boundDevices = service.boundDeviceNames
-            portText = service.port.toString()
+        val service = usbService
+        if (service == null) {
+            syncVirtualOpticalState(null)
+            return
+        }
 
-            if (service.serverRunning) {
-                selectedListenAddress = service.listenAddress
+        serverRunning = service.serverRunning
+        boundDevices = service.boundDeviceNames
+        portText = service.port.toString()
+        syncVirtualOpticalState(service)
 
-                if (
-                    service.listenAddress ==
-                    NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
-                ) {
-                    selectedListenTypeName =
-                        ListenInterfaceType.ALL.name
-                } else {
-                    availableListenAddresses
-                        .firstOrNull {
-                            it.address == service.listenAddress
-                        }
-                        ?.let {
-                            selectedListenTypeName =
-                                it.type.name
-                        }
-                }
+        if (service.serverRunning) {
+            selectedListenAddress = service.listenAddress
+
+            if (
+                service.listenAddress ==
+                NetworkInterfaceResolver.ALL_INTERFACES_ADDRESS
+            ) {
+                selectedListenTypeName =
+                    ListenInterfaceType.ALL.name
+            } else {
+                availableListenAddresses
+                    .firstOrNull {
+                        it.address == service.listenAddress
+                    }
+                    ?.let {
+                        selectedListenTypeName =
+                            it.type.name
+                    }
             }
         }
     }
@@ -1150,6 +1264,28 @@ fun MainScreen(
                     )
             }
         }
+
+    LaunchedEffect(
+        serviceBound,
+        usbService,
+        pagerState.currentPage
+    ) {
+        val service = usbService
+        if (
+            !serviceBound ||
+            service == null ||
+            !service.nativeReady ||
+            pagerState.currentPage != 2
+        ) {
+            return@LaunchedEffect
+        }
+
+        while (true) {
+            service.refreshVirtualOpticalState()
+            syncVirtualOpticalState(service)
+            delay(1000)
+        }
+    }
 
     // 设置native日志回调
     DisposableEffect(serviceBound, usbService) {
@@ -1684,8 +1820,44 @@ fun MainScreen(
                         }
                     }
 
-                    // Page 2 : journal
+                    // Page 2: virtual optical drive
                     2 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 8.dp
+                                )
+                        ) {
+                            VirtualOpticalDriveSection(
+                                nativeReady = usbService?.nativeReady == true,
+                                serverRunning = serverRunning,
+                                mediaMounted = virtualOpticalMounted,
+                                mediaName = virtualOpticalMediaName,
+                                mediaSize = virtualOpticalMediaSize,
+                                busid = virtualOpticalBusid,
+                                busy = virtualOpticalBusy,
+                                onSelectIso = {
+                                    opticalDocumentLauncher.launch(
+                                        arrayOf(
+                                            "application/x-iso9660-image",
+                                            "application/x-cd-image",
+                                            "application/octet-stream"
+                                        )
+                                    )
+                                },
+                                onMount = { remountVirtualOptical() },
+                                onEject = { ejectVirtualOptical() }
+                            )
+                        }
+                    }
+
+                    // Page 3: log
+                    3 -> {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1727,7 +1899,7 @@ fun MainScreen(
 
             // Bulles fixes en bas : appui ou swipe pour changer de page.
             PageIndicator(
-                pageCount = 3,
+                pageCount = 4,
                 currentPage = pagerState.currentPage,
                 onPageSelected = { page ->
                     scope.launch {
@@ -2555,6 +2727,166 @@ fun DeviceItem(
                         stringResource(R.string.bind),
                         fontSize = 12.sp
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun VirtualOpticalDriveSection(
+    nativeReady: Boolean,
+    serverRunning: Boolean,
+    mediaMounted: Boolean,
+    mediaName: String?,
+    mediaSize: Long,
+    busid: String?,
+    busy: Boolean,
+    onSelectIso: () -> Unit,
+    onMount: () -> Unit,
+    onEject: () -> Unit
+) {
+    val context = LocalContext.current
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.virtual_optical_drive),
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            Text(
+                text = stringResource(R.string.virtual_optical_device_name),
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Text(
+                text = stringResource(
+                    R.string.virtual_optical_status,
+                    stringResource(
+                        if (mediaMounted) {
+                            R.string.virtual_optical_media_mounted
+                        } else {
+                            R.string.virtual_optical_no_media
+                        }
+                    )
+                )
+            )
+
+            Text(
+                text = stringResource(
+                    R.string.virtual_optical_busid,
+                    busid ?: "—"
+                )
+            )
+
+            if (mediaName != null) {
+                HorizontalDivider()
+
+                Text(
+                    text = stringResource(R.string.virtual_optical_selected_iso),
+                    style = MaterialTheme.typography.labelLarge
+                )
+
+                Text(
+                    text = mediaName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (mediaMounted && mediaSize > 0) {
+                    Text(
+                        text = stringResource(
+                            R.string.virtual_optical_size,
+                            Formatter.formatFileSize(context, mediaSize)
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.virtual_optical_select_hint),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            Text(
+                text = stringResource(
+                    if (serverRunning) {
+                        R.string.virtual_optical_server_running_hint
+                    } else {
+                        R.string.virtual_optical_server_stopped_hint
+                    }
+                ),
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            if (!nativeReady) {
+                Text(
+                    text = stringResource(R.string.native_init_failed),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            if (busy) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                when {
+                    mediaMounted -> {
+                        Button(
+                            onClick = onSelectIso,
+                            enabled = nativeReady && !busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(stringResource(R.string.virtual_optical_change_iso))
+                        }
+
+                        OutlinedButton(
+                            onClick = onEject,
+                            enabled = nativeReady && !busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(stringResource(R.string.virtual_optical_eject))
+                        }
+                    }
+
+                    mediaName != null -> {
+                        Button(
+                            onClick = onMount,
+                            enabled = nativeReady && !busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(stringResource(R.string.virtual_optical_mount))
+                        }
+
+                        OutlinedButton(
+                            onClick = onSelectIso,
+                            enabled = nativeReady && !busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(stringResource(R.string.virtual_optical_change_iso))
+                        }
+                    }
+
+                    else -> {
+                        Button(
+                            onClick = onSelectIso,
+                            enabled = nativeReady && !busy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.virtual_optical_select_iso))
+                        }
+                    }
                 }
             }
         }
