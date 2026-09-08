@@ -56,8 +56,7 @@
     <string name="virtual_optical_selected_iso">Selected ISO</string>
     <string name="virtual_optical_size">Size: %1$s</string>
     <string name="virtual_optical_select_hint">Select an ISO image to insert it into the virtual optical drive.</string>
-    <string name="virtual_optical_server_running_hint">The virtual drive is exposed by the running USB/IP server.</string>
-    <string name="virtual_optical_server_stopped_hint">The drive will be exposed to USB/IP clients when the server is started.</string>
+    <string name="virtual_optical_server_stopped">USB/IP server stopped</string>
     <string name="virtual_optical_select_iso">Select ISO</string>
     <string name="virtual_optical_change_iso">Change ISO</string>
     <string name="virtual_optical_mount">Mount</string>
