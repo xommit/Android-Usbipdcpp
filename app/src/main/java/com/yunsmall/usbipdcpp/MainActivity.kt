@@ -2834,11 +2834,6 @@ fun VirtualOpticalDriveSection(
                         .fillMaxWidth()
                         .basicMarquee()
                 )
-            } else {
-                Text(
-                    text = stringResource(R.string.virtual_optical_select_hint),
-                    style = MaterialTheme.typography.bodyMedium
-                )
             }
 
             if (!nativeReady) {
