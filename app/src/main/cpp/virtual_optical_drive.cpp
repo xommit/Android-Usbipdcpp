@@ -41,6 +41,457 @@ constexpr std::uint8_t kAscMediumRemovalPrevented = 0x53;
 
 constexpr std::uint16_t kBdRomProfile = 0x0040;
 
+constexpr std::uint64_t kVolumeDescriptorStartSector = 16;
+constexpr std::uint64_t kVolumeDescriptorEndSector = 100;
+constexpr std::uint64_t kUdfPrimaryAnchorSector = 256;
+constexpr std::size_t kUdfDescriptorTagSize = 16;
+constexpr std::uint16_t kUdfAnchorTagId = 2;
+
+// Keep validation bounded to a small set of fixed sectors so its cost does not
+// depend on the total ISO size.
+enum class ProbeResult : std::uint8_t {
+    Match,
+    NoMatch,
+    IoError,
+};
+
+enum class ReadResult : std::uint8_t {
+    Success,
+    OutOfRange,
+    IoError,
+};
+
+std::uint16_t load_le16(const std::uint8_t* data) {
+    return static_cast<std::uint16_t>(data[0]) |
+           (static_cast<std::uint16_t>(data[1]) << 8);
+}
+
+std::uint16_t load_be16(const std::uint8_t* data) {
+    return (static_cast<std::uint16_t>(data[0]) << 8) |
+           static_cast<std::uint16_t>(data[1]);
+}
+
+std::uint32_t load_le32(const std::uint8_t* data) {
+    return static_cast<std::uint32_t>(data[0]) |
+           (static_cast<std::uint32_t>(data[1]) << 8) |
+           (static_cast<std::uint32_t>(data[2]) << 16) |
+           (static_cast<std::uint32_t>(data[3]) << 24);
+}
+
+std::uint32_t load_be32(const std::uint8_t* data) {
+    return (static_cast<std::uint32_t>(data[0]) << 24) |
+           (static_cast<std::uint32_t>(data[1]) << 16) |
+           (static_cast<std::uint32_t>(data[2]) << 8) |
+           static_cast<std::uint32_t>(data[3]);
+}
+
+bool get_fd_size(int fd, std::uint64_t* size) {
+    if (fd < 0 || size == nullptr) {
+        return false;
+    }
+
+    struct stat info {};
+    if (::fstat(fd, &info) == 0 && info.st_size > 0) {
+        *size = static_cast<std::uint64_t>(info.st_size);
+        return true;
+    }
+
+    const off_t current = ::lseek(fd, 0, SEEK_CUR);
+    const off_t end = ::lseek(fd, 0, SEEK_END);
+    if (current >= 0) {
+        (void) ::lseek(fd, current, SEEK_SET);
+    }
+    if (end <= 0) {
+        return false;
+    }
+
+    *size = static_cast<std::uint64_t>(end);
+    return true;
+}
+
+ReadResult read_exact_at(
+    int fd,
+    std::uint64_t file_size,
+    std::uint64_t offset,
+    std::uint8_t* destination,
+    std::size_t length
+) {
+    if (destination == nullptr || length == 0) {
+        return length == 0 ? ReadResult::Success : ReadResult::IoError;
+    }
+    if (offset > file_size || length > file_size - offset) {
+        return ReadResult::OutOfRange;
+    }
+    if (offset > static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
+        return ReadResult::OutOfRange;
+    }
+
+    std::size_t completed = 0;
+    while (completed < length) {
+        const std::uint64_t absolute_offset = offset + completed;
+        if (absolute_offset > static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
+            return ReadResult::OutOfRange;
+        }
+
+        const ssize_t result = ::pread(
+            fd,
+            destination + completed,
+            length - completed,
+            static_cast<off_t>(absolute_offset)
+        );
+        if (result < 0 && errno == EINTR) {
+            continue;
+        }
+        if (result < 0) {
+            return ReadResult::IoError;
+        }
+        if (result == 0) {
+            return ReadResult::OutOfRange;
+        }
+        completed += static_cast<std::size_t>(result);
+    }
+
+    return ReadResult::Success;
+}
+
+bool load_both_endian_16(const std::uint8_t* data, std::uint16_t* value) {
+    const std::uint16_t little = load_le16(data);
+    const std::uint16_t big = load_be16(data + 2);
+    if (little != big) {
+        return false;
+    }
+    if (value != nullptr) {
+        *value = little;
+    }
+    return true;
+}
+
+bool load_both_endian_32(const std::uint8_t* data, std::uint32_t* value) {
+    const std::uint32_t little = load_le32(data);
+    const std::uint32_t big = load_be32(data + 4);
+    if (little != big) {
+        return false;
+    }
+    if (value != nullptr) {
+        *value = little;
+    }
+    return true;
+}
+
+bool checked_multiply(std::uint64_t left, std::uint64_t right, std::uint64_t* result) {
+    if (result == nullptr) {
+        return false;
+    }
+    if (left != 0 && right > std::numeric_limits<std::uint64_t>::max() / left) {
+        return false;
+    }
+    *result = left * right;
+    return true;
+}
+
+bool checked_add(std::uint64_t left, std::uint64_t right, std::uint64_t* result) {
+    if (result == nullptr || right > std::numeric_limits<std::uint64_t>::max() - left) {
+        return false;
+    }
+    *result = left + right;
+    return true;
+}
+
+bool validate_primary_volume_descriptor(
+    const std::array<std::uint8_t, kOpticalBlockSize>& descriptor,
+    std::size_t volume_space_offset,
+    std::size_t logical_block_offset,
+    std::size_t root_record_offset,
+    std::uint64_t file_size
+) {
+    std::uint32_t volume_space_size = 0;
+    std::uint16_t logical_block_size = 0;
+    if (!load_both_endian_32(descriptor.data() + volume_space_offset, &volume_space_size) ||
+        !load_both_endian_16(descriptor.data() + logical_block_offset, &logical_block_size)) {
+        return false;
+    }
+
+    if (volume_space_size == 0 || logical_block_size < 512 || logical_block_size > kOpticalBlockSize ||
+        (logical_block_size & (logical_block_size - 1)) != 0) {
+        return false;
+    }
+
+    std::uint64_t declared_volume_bytes = 0;
+    if (!checked_multiply(volume_space_size, logical_block_size, &declared_volume_bytes) ||
+        declared_volume_bytes == 0 || declared_volume_bytes > file_size) {
+        return false;
+    }
+
+    const std::uint8_t root_record_length = descriptor[root_record_offset];
+    if (root_record_length < 34 || root_record_offset + root_record_length > descriptor.size()) {
+        return false;
+    }
+
+    std::uint32_t root_extent = 0;
+    std::uint32_t root_data_length = 0;
+    if (!load_both_endian_32(descriptor.data() + root_record_offset + 2, &root_extent) ||
+        !load_both_endian_32(descriptor.data() + root_record_offset + 10, &root_data_length) ||
+        root_data_length == 0) {
+        return false;
+    }
+
+    // The root entry must describe a directory and use the special root identifier.
+    if ((descriptor[root_record_offset + 25] & 0x02) == 0 ||
+        descriptor[root_record_offset + 32] != 1 ||
+        descriptor[root_record_offset + 33] != 0) {
+        return false;
+    }
+
+    std::uint64_t root_offset = 0;
+    std::uint64_t root_end = 0;
+    if (!checked_multiply(root_extent, logical_block_size, &root_offset) ||
+        !checked_add(root_offset, root_data_length, &root_end)) {
+        return false;
+    }
+
+    return root_end <= declared_volume_bytes && root_end <= file_size;
+}
+
+ProbeResult probe_iso9660_or_high_sierra(int fd, std::uint64_t file_size) {
+    std::array<std::uint8_t, kOpticalBlockSize> descriptor {};
+
+    for (std::uint64_t sector = kVolumeDescriptorStartSector;
+         sector < kVolumeDescriptorEndSector;
+         ++sector) {
+        const std::uint64_t offset = sector * static_cast<std::uint64_t>(kOpticalBlockSize);
+        const ReadResult read = read_exact_at(
+            fd,
+            file_size,
+            offset,
+            descriptor.data(),
+            descriptor.size()
+        );
+        if (read == ReadResult::OutOfRange) {
+            return ProbeResult::NoMatch;
+        }
+        if (read == ReadResult::IoError) {
+            return ProbeResult::IoError;
+        }
+
+        // ECMA-119 / ISO 9660. Joliet, Rock Ridge and El Torito keep this PVD.
+        if (std::memcmp(descriptor.data() + 1, "CD001", 5) == 0) {
+            if (descriptor[0] == 1 && descriptor[6] == 1 &&
+                validate_primary_volume_descriptor(descriptor, 80, 128, 156, file_size)) {
+                return ProbeResult::Match;
+            }
+            if (descriptor[0] == 0xFF) {
+                return ProbeResult::NoMatch;
+            }
+            continue;
+        }
+
+        // High Sierra is the predecessor to ISO 9660 and is still recognized by Linux isofs.
+        if (std::memcmp(descriptor.data() + 9, "CDROM", 5) == 0 &&
+            descriptor[8] == 1 && descriptor[14] == 1 &&
+            validate_primary_volume_descriptor(descriptor, 88, 136, 180, file_size)) {
+            return ProbeResult::Match;
+        }
+    }
+
+    return ProbeResult::NoMatch;
+}
+
+std::uint16_t udf_crc16(const std::uint8_t* data, std::size_t length) {
+    std::uint16_t crc = 0;
+    for (std::size_t index = 0; index < length; ++index) {
+        crc ^= static_cast<std::uint16_t>(data[index]) << 8;
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc & 0x8000) != 0
+                ? static_cast<std::uint16_t>((crc << 1) ^ 0x1021)
+                : static_cast<std::uint16_t>(crc << 1);
+        }
+    }
+    return crc;
+}
+
+bool validate_udf_descriptor_tag(
+    const std::array<std::uint8_t, kOpticalBlockSize>& descriptor,
+    std::uint16_t expected_tag_id,
+    std::uint64_t expected_location
+) {
+    if (load_le16(descriptor.data()) != expected_tag_id) {
+        return false;
+    }
+
+    const std::uint16_t descriptor_version = load_le16(descriptor.data() + 2);
+    if ((descriptor_version != 2 && descriptor_version != 3) || descriptor[5] != 0) {
+        return false;
+    }
+
+    std::uint8_t checksum = 0;
+    for (std::size_t index = 0; index < kUdfDescriptorTagSize; ++index) {
+        if (index != 4) {
+            checksum = static_cast<std::uint8_t>(checksum + descriptor[index]);
+        }
+    }
+    if (checksum != descriptor[4]) {
+        return false;
+    }
+
+    if (load_le32(descriptor.data() + 12) != expected_location) {
+        return false;
+    }
+
+    const std::uint16_t crc_length = load_le16(descriptor.data() + 10);
+    const std::uint16_t expected_crc = load_le16(descriptor.data() + 8);
+    if (crc_length == 0) {
+        return expected_crc == 0;
+    }
+    if (crc_length > descriptor.size() - kUdfDescriptorTagSize) {
+        return false;
+    }
+
+    return udf_crc16(descriptor.data() + kUdfDescriptorTagSize, crc_length) == expected_crc;
+}
+
+bool extent_fits_file(
+    std::uint32_t start_block,
+    std::uint32_t byte_length,
+    std::uint64_t total_blocks
+) {
+    if (byte_length == 0 || start_block >= total_blocks) {
+        return false;
+    }
+
+    const std::uint64_t extent_blocks =
+        (static_cast<std::uint64_t>(byte_length) + kOpticalBlockSize - 1) /
+        kOpticalBlockSize;
+    return extent_blocks <= total_blocks - start_block;
+}
+
+ProbeResult probe_udf_volume_sequence(
+    int fd,
+    std::uint64_t file_size,
+    std::uint32_t start_block,
+    std::uint32_t byte_length
+) {
+    const std::uint64_t total_blocks = file_size / kOpticalBlockSize;
+    if (!extent_fits_file(start_block, byte_length, total_blocks)) {
+        return ProbeResult::NoMatch;
+    }
+
+    const std::uint64_t extent_blocks =
+        (static_cast<std::uint64_t>(byte_length) + kOpticalBlockSize - 1) /
+        kOpticalBlockSize;
+    const std::uint64_t blocks_to_probe = std::min<std::uint64_t>(extent_blocks, 32);
+    std::array<std::uint8_t, kOpticalBlockSize> descriptor {};
+
+    for (std::uint64_t index = 0; index < blocks_to_probe; ++index) {
+        const std::uint64_t block = static_cast<std::uint64_t>(start_block) + index;
+        const ReadResult read = read_exact_at(
+            fd,
+            file_size,
+            block * kOpticalBlockSize,
+            descriptor.data(),
+            descriptor.size()
+        );
+        if (read == ReadResult::IoError) {
+            return ProbeResult::IoError;
+        }
+        if (read != ReadResult::Success) {
+            return ProbeResult::NoMatch;
+        }
+
+        const std::uint16_t tag_id = load_le16(descriptor.data());
+        if (tag_id < 1 || tag_id > 8) {
+            continue;
+        }
+        if (validate_udf_descriptor_tag(descriptor, tag_id, block)) {
+            return ProbeResult::Match;
+        }
+    }
+
+    return ProbeResult::NoMatch;
+}
+
+ProbeResult probe_udf_anchor_at(
+    int fd,
+    std::uint64_t file_size,
+    std::uint64_t anchor_block
+) {
+    const std::uint64_t total_blocks = file_size / kOpticalBlockSize;
+    if (anchor_block >= total_blocks || anchor_block > std::numeric_limits<std::uint32_t>::max()) {
+        return ProbeResult::NoMatch;
+    }
+
+    std::array<std::uint8_t, kOpticalBlockSize> descriptor {};
+    const ReadResult read = read_exact_at(
+        fd,
+        file_size,
+        anchor_block * kOpticalBlockSize,
+        descriptor.data(),
+        descriptor.size()
+    );
+    if (read == ReadResult::IoError) {
+        return ProbeResult::IoError;
+    }
+    if (read != ReadResult::Success ||
+        !validate_udf_descriptor_tag(descriptor, kUdfAnchorTagId, anchor_block)) {
+        return ProbeResult::NoMatch;
+    }
+
+    const std::uint32_t main_length = load_le32(descriptor.data() + 16);
+    const std::uint32_t main_location = load_le32(descriptor.data() + 20);
+    const std::uint32_t reserve_length = load_le32(descriptor.data() + 24);
+    const std::uint32_t reserve_location = load_le32(descriptor.data() + 28);
+
+    const ProbeResult main = probe_udf_volume_sequence(
+        fd,
+        file_size,
+        main_location,
+        main_length
+    );
+    if (main != ProbeResult::NoMatch) {
+        return main;
+    }
+
+    return probe_udf_volume_sequence(
+        fd,
+        file_size,
+        reserve_location,
+        reserve_length
+    );
+}
+
+ProbeResult probe_udf(int fd, std::uint64_t file_size) {
+    const std::uint64_t total_blocks = file_size / kOpticalBlockSize;
+    if (total_blocks <= kUdfPrimaryAnchorSector) {
+        return ProbeResult::NoMatch;
+    }
+
+    std::array<std::uint64_t, 3> candidates {
+        kUdfPrimaryAnchorSector,
+        total_blocks - 1,
+        total_blocks > 256 ? total_blocks - 257 : 0,
+    };
+
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        const std::uint64_t candidate = candidates[index];
+        bool duplicate = false;
+        for (std::size_t previous = 0; previous < index; ++previous) {
+            if (candidates[previous] == candidate) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+            continue;
+        }
+
+        const ProbeResult result = probe_udf_anchor_at(fd, file_size, candidate);
+        if (result != ProbeResult::NoMatch) {
+            return result;
+        }
+    }
+
+    return ProbeResult::NoMatch;
+}
+
 std::vector<std::uint8_t> limit_response(std::vector<std::uint8_t> data, std::uint32_t limit) {
     if (data.size() > limit) {
         data.resize(limit);
@@ -49,6 +500,35 @@ std::vector<std::uint8_t> limit_response(std::vector<std::uint8_t> data, std::ui
 }
 
 } // namespace
+
+OpticalImageValidationResult validate_optical_image_fd(int fd) {
+    if (fd < 0) {
+        return OpticalImageValidationResult::IoError;
+    }
+
+    std::uint64_t file_size = 0;
+    if (!get_fd_size(fd, &file_size) || file_size == 0) {
+        return OpticalImageValidationResult::IoError;
+    }
+
+    const ProbeResult iso = probe_iso9660_or_high_sierra(fd, file_size);
+    if (iso == ProbeResult::Match) {
+        return OpticalImageValidationResult::Valid;
+    }
+    if (iso == ProbeResult::IoError) {
+        return OpticalImageValidationResult::IoError;
+    }
+
+    const ProbeResult udf = probe_udf(fd, file_size);
+    if (udf == ProbeResult::Match) {
+        return OpticalImageValidationResult::Valid;
+    }
+    if (udf == ProbeResult::IoError) {
+        return OpticalImageValidationResult::IoError;
+    }
+
+    return OpticalImageValidationResult::Invalid;
+}
 
 OpticalMediaSource::~OpticalMediaSource() {
     eject();

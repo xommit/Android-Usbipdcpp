@@ -16,6 +16,14 @@ namespace android_usbip {
 inline constexpr char kVirtualOpticalBusId[] = "99-1";
 inline constexpr std::uint32_t kOpticalBlockSize = 2048;
 
+enum class OpticalImageValidationResult : std::uint8_t {
+    Valid,
+    Invalid,
+    IoError,
+};
+
+OpticalImageValidationResult validate_optical_image_fd(int fd);
+
 class OpticalMediaSource {
 public:
     OpticalMediaSource() = default;

@@ -31,6 +31,12 @@ namespace ErrorCode {
     constexpr int UNKNOWN_ERROR = 99;
 }
 
+namespace VirtualOpticalMountResult {
+    constexpr int SUCCESS = 0;
+    constexpr int INVALID_IMAGE = 1;
+    constexpr int MOUNT_FAILED = 2;
+}
+
 namespace {
     std::mutex g_server_mutex;
     std::unique_ptr<usbipdcpp::LibusbServer> g_server;
@@ -450,7 +456,7 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_notifyDeviceRemovedNative(
     g_server->notify_device_removed(busid_str);
 }
 
-JNIEXPORT jboolean JNICALL
+JNIEXPORT jint JNICALL
 Java_com_yunsmall_usbipdcpp_UsbIpNative_mountVirtualOpticalNative(
     JNIEnv* env, jobject thiz, jint fd) {
     (void) env;
@@ -458,19 +464,29 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_mountVirtualOpticalNative(
 
     if (fd < 0) {
         spdlog::error("Cannot mount virtual optical media: invalid fd={}", fd);
-        return JNI_FALSE;
+        return VirtualOpticalMountResult::MOUNT_FAILED;
+    }
+
+    const auto validation = android_usbip::validate_optical_image_fd(fd);
+    if (validation == android_usbip::OpticalImageValidationResult::Invalid) {
+        spdlog::warn("Rejected invalid virtual optical image from fd={}", fd);
+        return VirtualOpticalMountResult::INVALID_IMAGE;
+    }
+    if (validation == android_usbip::OpticalImageValidationResult::IoError) {
+        spdlog::error("Failed to validate virtual optical image from fd={}", fd);
+        return VirtualOpticalMountResult::MOUNT_FAILED;
     }
 
     if (!g_optical_media->mount_from_fd(fd)) {
         spdlog::error("Failed to mount virtual optical media from fd={}", fd);
-        return JNI_FALSE;
+        return VirtualOpticalMountResult::MOUNT_FAILED;
     }
 
     spdlog::info(
         "Virtual optical media mounted: {} bytes",
         g_optical_media->size_bytes()
     );
-    return JNI_TRUE;
+    return VirtualOpticalMountResult::SUCCESS;
 }
 
 JNIEXPORT void JNICALL
