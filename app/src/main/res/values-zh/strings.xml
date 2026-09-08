@@ -55,8 +55,7 @@
     <string name="virtual_optical_selected_iso">已选择的 ISO</string>
     <string name="virtual_optical_size">大小：%1$s</string>
     <string name="virtual_optical_select_hint">选择 ISO 镜像并将其插入虚拟光驱。</string>
-    <string name="virtual_optical_server_running_hint">虚拟光驱已由正在运行的 USB/IP 服务器共享。</string>
-    <string name="virtual_optical_server_stopped_hint">启动服务器后，USB/IP 客户端即可使用此虚拟光驱。</string>
+    <string name="virtual_optical_server_stopped">USB/IP 服务器已停止</string>
     <string name="virtual_optical_select_iso">选择 ISO</string>
     <string name="virtual_optical_change_iso">更换 ISO</string>
     <string name="virtual_optical_mount">挂载</string>
