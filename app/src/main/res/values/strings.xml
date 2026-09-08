@@ -61,6 +61,7 @@
     <string name="virtual_optical_eject">Eject</string>
     <string name="virtual_optical_mount_success">ISO mounted</string>
     <string name="virtual_optical_mount_failed">Unable to mount ISO</string>
+    <string name="virtual_optical_invalid_iso">Invalid ISO image.</string>
     <string name="virtual_optical_eject_success">ISO ejected</string>
 
     <!-- Log -->
@@ -114,6 +115,8 @@
     <string name="log_virtual_optical_ejected">Virtual optical media ejected</string>
     <string name="log_virtual_optical_invalid_fd">Cannot mount virtual optical media: invalid fd=%1$d</string>
     <string name="log_virtual_optical_mount_failed">Failed to mount virtual optical media from fd=%1$d</string>
+    <string name="log_virtual_optical_invalid_image">Invalid virtual optical image rejected: fd=%1$d</string>
+    <string name="log_virtual_optical_validation_failed">Failed to validate virtual optical image: fd=%1$d</string>
     <string name="log_virtual_optical_register_failed">Failed to register virtual BD-ROM</string>
 
     <!-- Toast Messages -->
