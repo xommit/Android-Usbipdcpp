@@ -2769,11 +2769,6 @@ fun VirtualOpticalDriveSection(
             )
 
             Text(
-                text = stringResource(R.string.virtual_optical_device_name),
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Text(
                 text = stringResource(
                     R.string.virtual_optical_status,
                     stringResource(
