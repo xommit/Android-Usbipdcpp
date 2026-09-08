@@ -60,6 +60,7 @@
     <string name="virtual_optical_eject">Éjecter</string>
     <string name="virtual_optical_mount_success">ISO montée</string>
     <string name="virtual_optical_mount_failed">Impossible de monter l’ISO</string>
+    <string name="virtual_optical_invalid_iso">Image ISO invalide.</string>
     <string name="virtual_optical_eject_success">ISO éjectée</string>
 
     <!-- Journal -->
@@ -113,6 +114,8 @@
     <string name="log_virtual_optical_ejected">Média optique virtuel éjecté</string>
     <string name="log_virtual_optical_invalid_fd">Impossible de monter le média optique virtuel : fd invalide=%1$d</string>
     <string name="log_virtual_optical_mount_failed">Échec du montage du média optique virtuel depuis fd=%1$d</string>
+    <string name="log_virtual_optical_invalid_image">Image optique virtuelle invalide refusée : fd=%1$d</string>
+    <string name="log_virtual_optical_validation_failed">Échec de la validation de l’image optique virtuelle : fd=%1$d</string>
     <string name="log_virtual_optical_register_failed">Échec de l’enregistrement du lecteur BD-ROM virtuel</string>
 
     <!-- Messages -->
