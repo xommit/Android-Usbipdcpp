@@ -54,7 +54,6 @@
     <string name="virtual_optical_busid">Bus ID：%1$s</string>
     <string name="virtual_optical_selected_iso">已选择的 ISO</string>
     <string name="virtual_optical_size">大小：%1$s</string>
-    <string name="virtual_optical_select_hint">选择 ISO 镜像并将其插入虚拟光驱。</string>
     <string name="virtual_optical_select_iso">选择 ISO</string>
     <string name="virtual_optical_change_iso">更换 ISO</string>
     <string name="virtual_optical_mount">挂载</string>
