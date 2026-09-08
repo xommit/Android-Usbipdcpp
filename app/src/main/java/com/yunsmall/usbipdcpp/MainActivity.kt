@@ -1837,7 +1837,6 @@ fun MainScreen(
                         ) {
                             VirtualOpticalDriveSection(
                                 nativeReady = usbService?.nativeReady == true,
-                                serverRunning = serverRunning,
                                 mediaMounted = virtualOpticalMounted,
                                 mediaName = virtualOpticalMediaName,
                                 mediaSize = virtualOpticalMediaSize,
@@ -2747,7 +2746,6 @@ fun DeviceItem(
 @Composable
 fun VirtualOpticalDriveSection(
     nativeReady: Boolean,
-    serverRunning: Boolean,
     mediaMounted: Boolean,
     mediaName: String?,
     mediaSize: Long,
@@ -2840,14 +2838,6 @@ fun VirtualOpticalDriveSection(
                 Text(
                     text = stringResource(R.string.virtual_optical_select_hint),
                     style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            if (!serverRunning) {
-                Text(
-                    text = stringResource(R.string.virtual_optical_server_stopped),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
