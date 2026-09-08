@@ -29,7 +29,8 @@
     <string name="server_running">Serveur en cours d’exécution</string>
     <string name="server_stopped">Serveur arrêté</string>
     <string name="address">Adresse : %1$s:%2$d</string>
-    <string name="devices_bound">%1$d périphérique(s) associé(s)</string>
+    <string name="devices_bound">%1$d périphérique(s) physique(s) associé(s)</string>
+    <string name="virtual_devices_bound">%1$d périphérique(s) virtuel(s) associé(s)</string>
 
     <!-- Liste des périphériques -->
     <string name="usb_devices">Périphériques USB</string>
