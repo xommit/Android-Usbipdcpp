@@ -55,8 +55,7 @@
     <string name="virtual_optical_selected_iso">ISO sélectionnée</string>
     <string name="virtual_optical_size">Taille : %1$s</string>
     <string name="virtual_optical_select_hint">Sélectionnez une image ISO pour l’insérer dans le lecteur optique virtuel.</string>
-    <string name="virtual_optical_server_running_hint">Le lecteur virtuel est exposé par le serveur USB/IP en cours d’exécution.</string>
-    <string name="virtual_optical_server_stopped_hint">Le lecteur sera exposé aux clients USB/IP lorsque le serveur sera démarré.</string>
+    <string name="virtual_optical_server_stopped">Serveur USB/IP arrêté</string>
     <string name="virtual_optical_select_iso">Sélectionner une ISO</string>
     <string name="virtual_optical_change_iso">Changer d’ISO</string>
     <string name="virtual_optical_mount">Monter</string>
