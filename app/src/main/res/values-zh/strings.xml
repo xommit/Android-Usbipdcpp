@@ -60,6 +60,7 @@
     <string name="virtual_optical_eject">弹出</string>
     <string name="virtual_optical_mount_success">ISO 已挂载</string>
     <string name="virtual_optical_mount_failed">无法挂载 ISO</string>
+    <string name="virtual_optical_invalid_iso">ISO 镜像无效。</string>
     <string name="virtual_optical_eject_success">ISO 已弹出</string>
 
     <!-- Log -->
@@ -113,6 +114,8 @@
     <string name="log_virtual_optical_ejected">虚拟光驱介质已弹出</string>
     <string name="log_virtual_optical_invalid_fd">无法挂载虚拟光驱介质：无效 fd=%1$d</string>
     <string name="log_virtual_optical_mount_failed">无法从 fd=%1$d 挂载虚拟光驱介质</string>
+    <string name="log_virtual_optical_invalid_image">已拒绝无效的虚拟光盘镜像：fd=%1$d</string>
+    <string name="log_virtual_optical_validation_failed">虚拟光盘镜像验证失败：fd=%1$d</string>
     <string name="log_virtual_optical_register_failed">虚拟 BD-ROM 注册失败</string>
 
     <!-- Toast Messages -->
