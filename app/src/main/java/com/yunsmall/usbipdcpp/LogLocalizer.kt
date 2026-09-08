@@ -158,6 +158,28 @@ object LogLocalizer {
         }
 
         Regex(
+            """^Rejected invalid virtual optical image from fd=(-?\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_virtual_optical_invalid_image,
+                fd
+            )
+        }
+
+        Regex(
+            """^Failed to validate virtual optical image from fd=(-?\d+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(message)?.let { match ->
+            val fd = match.groupValues[1].toIntOrNull() ?: return@let
+            return context.getString(
+                R.string.log_virtual_optical_validation_failed,
+                fd
+            )
+        }
+
+        Regex(
             """^Binding USB device:\s*fd=(\d+),\s*vid=(0x[0-9A-Fa-f]+),\s*pid=(0x[0-9A-Fa-f]+)$""",
             RegexOption.IGNORE_CASE
         ).matchEntire(message)?.let { match ->

@@ -681,16 +681,19 @@ fun MainScreen(
             scope.launch {
                 virtualOpticalBusy = true
                 try {
-                    val mounted = service.mountVirtualOptical(uri)
+                    val result = service.mountVirtualOptical(uri)
                     syncVirtualOpticalState(service)
 
                     Toast.makeText(
                         context,
                         context.getString(
-                            if (mounted) {
-                                R.string.virtual_optical_mount_success
-                            } else {
-                                R.string.virtual_optical_mount_failed
+                            when (result) {
+                                VirtualOpticalMountResult.Success ->
+                                    R.string.virtual_optical_mount_success
+                                VirtualOpticalMountResult.InvalidImage ->
+                                    R.string.virtual_optical_invalid_iso
+                                VirtualOpticalMountResult.Failed ->
+                                    R.string.virtual_optical_mount_failed
                             }
                         ),
                         Toast.LENGTH_SHORT
@@ -707,16 +710,19 @@ fun MainScreen(
         scope.launch {
             virtualOpticalBusy = true
             try {
-                val mounted = service.remountVirtualOptical()
+                val result = service.remountVirtualOptical()
                 syncVirtualOpticalState(service)
 
                 Toast.makeText(
                     context,
                     context.getString(
-                        if (mounted) {
-                            R.string.virtual_optical_mount_success
-                        } else {
-                            R.string.virtual_optical_mount_failed
+                        when (result) {
+                            VirtualOpticalMountResult.Success ->
+                                R.string.virtual_optical_mount_success
+                            VirtualOpticalMountResult.InvalidImage ->
+                                R.string.virtual_optical_invalid_iso
+                            VirtualOpticalMountResult.Failed ->
+                                R.string.virtual_optical_mount_failed
                         }
                     ),
                     Toast.LENGTH_SHORT

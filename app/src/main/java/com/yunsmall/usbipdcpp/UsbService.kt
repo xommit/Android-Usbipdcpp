@@ -21,6 +21,12 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
+enum class VirtualOpticalMountResult {
+    Success,
+    InvalidImage,
+    Failed
+}
+
 class UsbService : Service() {
 
     companion object {
@@ -234,49 +240,81 @@ class UsbService : Service() {
 
         Thread {
             runBlocking {
-                if (!mountVirtualOptical(Uri.parse(storedUri), persistUri = false)) {
+                if (
+                    mountVirtualOptical(Uri.parse(storedUri), persistUri = false) !=
+                    VirtualOpticalMountResult.Success
+                ) {
                     Log.w(TAG, "Failed to restore virtual optical media")
                 }
             }
         }.start()
     }
 
-    suspend fun mountVirtualOptical(
-        uri: Uri,
-        persistUri: Boolean = true
-    ): Boolean {
-        if (!nativeReady) {
+    private fun hasUnsupportedOpticalExtension(displayName: String?): Boolean {
+        val name = displayName?.trim().orEmpty()
+        if (name.isEmpty()) {
             return false
         }
 
+        val dot = name.lastIndexOf('.')
+        return dot > 0 && !name.endsWith(".iso", ignoreCase = true)
+    }
+
+    suspend fun mountVirtualOptical(
+        uri: Uri,
+        persistUri: Boolean = true
+    ): VirtualOpticalMountResult {
+        if (!nativeReady) {
+            return VirtualOpticalMountResult.Failed
+        }
+
         return withContext(UsbIpNative.nativeDispatcher) {
-            val displayName = resolveVirtualOpticalDisplayName(uri)
-            val mounted = try {
-                contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
-                    UsbIpNative.mountVirtualOpticalNative(descriptor.fd)
-                } ?: false
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to open virtual optical media", e)
-                false
+            val resolvedDisplayName = resolveVirtualOpticalDisplayName(uri)
+            if (hasUnsupportedOpticalExtension(resolvedDisplayName)) {
+                Log.w(
+                    TAG,
+                    "Rejected virtual optical media with unsupported filename: $resolvedDisplayName"
+                )
+                return@withContext VirtualOpticalMountResult.InvalidImage
             }
 
-            if (mounted) {
+            val displayName = resolvedDisplayName ?: uri.lastPathSegment
+            val nativeResult = try {
+                contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                    UsbIpNative.mountVirtualOpticalNative(descriptor.fd)
+                } ?: UsbIpNative.VirtualOpticalMountResult.MOUNT_FAILED
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to open virtual optical media", e)
+                UsbIpNative.VirtualOpticalMountResult.MOUNT_FAILED
+            }
+
+            val result = when (nativeResult) {
+                UsbIpNative.VirtualOpticalMountResult.SUCCESS ->
+                    VirtualOpticalMountResult.Success
+                UsbIpNative.VirtualOpticalMountResult.INVALID_IMAGE ->
+                    VirtualOpticalMountResult.InvalidImage
+                else ->
+                    VirtualOpticalMountResult.Failed
+            }
+
+            if (result == VirtualOpticalMountResult.Success) {
                 if (persistUri) {
                     rememberVirtualOpticalUri(uri, displayName)
                 }
                 virtualOpticalMediaUri = uri.toString()
-                virtualOpticalMediaName = displayName ?: uri.lastPathSegment
+                virtualOpticalMediaName = displayName
                 virtualOpticalMediaMounted = true
                 virtualOpticalMediaSize =
                     UsbIpNative.getVirtualOpticalMediaSizeNative()
             }
 
-            mounted
+            result
         }
     }
 
-    suspend fun remountVirtualOptical(): Boolean {
-        val storedUri = virtualOpticalMediaUri ?: return false
+    suspend fun remountVirtualOptical(): VirtualOpticalMountResult {
+        val storedUri = virtualOpticalMediaUri
+            ?: return VirtualOpticalMountResult.Failed
         return mountVirtualOptical(
             Uri.parse(storedUri),
             persistUri = false
