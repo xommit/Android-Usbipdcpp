@@ -49,7 +49,6 @@
 
     <!-- Virtual Optical Drive -->
     <string name="virtual_optical_drive">Virtual Optical Drive</string>
-    <string name="virtual_optical_device_name">Android USB/IP Virtual BD-ROM</string>
     <string name="virtual_optical_status">Status: %1$s</string>
     <string name="virtual_optical_media_mounted">ISO mounted</string>
     <string name="virtual_optical_no_media">No media inserted</string>
