@@ -46,6 +46,26 @@
     <string name="unbind">Unbind</string>
     <string name="unknown_device">Unknown Device</string>
 
+    <!-- Virtual Optical Drive -->
+    <string name="virtual_optical_drive">Virtual Optical Drive</string>
+    <string name="virtual_optical_device_name">Android USB/IP Virtual BD-ROM</string>
+    <string name="virtual_optical_status">Status: %1$s</string>
+    <string name="virtual_optical_media_mounted">ISO mounted</string>
+    <string name="virtual_optical_no_media">No media inserted</string>
+    <string name="virtual_optical_busid">Bus ID: %1$s</string>
+    <string name="virtual_optical_selected_iso">Selected ISO</string>
+    <string name="virtual_optical_size">Size: %1$s</string>
+    <string name="virtual_optical_select_hint">Select an ISO image to insert it into the virtual optical drive.</string>
+    <string name="virtual_optical_server_running_hint">The virtual drive is exposed by the running USB/IP server.</string>
+    <string name="virtual_optical_server_stopped_hint">The drive will be exposed to USB/IP clients when the server is started.</string>
+    <string name="virtual_optical_select_iso">Select ISO</string>
+    <string name="virtual_optical_change_iso">Change ISO</string>
+    <string name="virtual_optical_mount">Mount</string>
+    <string name="virtual_optical_eject">Eject</string>
+    <string name="virtual_optical_mount_success">ISO mounted</string>
+    <string name="virtual_optical_mount_failed">Unable to mount ISO</string>
+    <string name="virtual_optical_eject_success">ISO ejected</string>
+
     <!-- Log -->
     <string name="log">Log</string>
     <string name="expand">Expand</string>
@@ -92,6 +112,12 @@
     <string name="log_device_unbound_native_successfully">Successfully unbound device %1$s (fd=%2$d)</string>
     <string name="log_device_unbound_successfully">Device unbound successfully</string>
     <string name="log_unknown_message">%1$s</string>
+    <string name="log_virtual_optical_registered">Virtual BD-ROM registered: busid=%1$s</string>
+    <string name="log_virtual_optical_mounted">Virtual optical media mounted: %1$d bytes</string>
+    <string name="log_virtual_optical_ejected">Virtual optical media ejected</string>
+    <string name="log_virtual_optical_invalid_fd">Cannot mount virtual optical media: invalid fd=%1$d</string>
+    <string name="log_virtual_optical_mount_failed">Failed to mount virtual optical media from fd=%1$d</string>
+    <string name="log_virtual_optical_register_failed">Failed to register virtual BD-ROM</string>
 
     <!-- Toast Messages -->
     <string name="please_start_server">Please start server first</string>
