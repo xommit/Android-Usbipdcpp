@@ -2859,39 +2859,29 @@ fun VirtualOpticalDriveSection(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 when {
-                    mediaMounted -> {
-                        Button(
-                            onClick = onSelectIso,
-                            enabled = nativeReady && !busy,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(stringResource(R.string.virtual_optical_change_iso))
-                        }
-
-                        OutlinedButton(
-                            onClick = onEject,
-                            enabled = nativeReady && !busy,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(stringResource(R.string.virtual_optical_eject))
-                        }
-                    }
-
                     mediaName != null -> {
                         Button(
-                            onClick = onMount,
-                            enabled = nativeReady && !busy,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(stringResource(R.string.virtual_optical_mount))
-                        }
-
-                        OutlinedButton(
                             onClick = onSelectIso,
                             enabled = nativeReady && !busy,
                             modifier = Modifier.weight(1f)
                         ) {
                             Text(stringResource(R.string.virtual_optical_change_iso))
+                        }
+
+                        OutlinedButton(
+                            onClick = if (mediaMounted) onEject else onMount,
+                            enabled = nativeReady && !busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (mediaMounted) {
+                                        R.string.virtual_optical_eject
+                                    } else {
+                                        R.string.virtual_optical_mount
+                                    }
+                                )
+                            )
                         }
                     }
 
