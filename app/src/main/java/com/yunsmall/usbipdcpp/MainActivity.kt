@@ -26,6 +26,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -2760,58 +2761,81 @@ fun VirtualOpticalDriveSection(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = stringResource(R.string.virtual_optical_drive),
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleMedium
             )
 
-            Text(
-                text = stringResource(
-                    R.string.virtual_optical_status,
-                    stringResource(
-                        if (mediaMounted) {
-                            R.string.virtual_optical_media_mounted
-                        } else {
-                            R.string.virtual_optical_no_media
-                        }
-                    )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.virtual_optical_status,
+                        stringResource(
+                            if (mediaMounted) {
+                                R.string.virtual_optical_media_mounted
+                            } else {
+                                R.string.virtual_optical_no_media
+                            }
+                        )
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
-            )
 
-            Text(
-                text = stringResource(
-                    R.string.virtual_optical_busid,
-                    busid ?: "—"
-                )
-            )
-
-            if (mediaName != null) {
-                HorizontalDivider()
+                Spacer(modifier = Modifier.width(12.dp))
 
                 Text(
-                    text = stringResource(R.string.virtual_optical_selected_iso),
-                    style = MaterialTheme.typography.labelLarge
+                    text = stringResource(
+                        R.string.virtual_optical_busid,
+                        busid ?: "—"
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
                 )
+            }
+
+            if (mediaName != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.virtual_optical_selected_iso),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+
+                    if (mediaMounted && mediaSize > 0) {
+                        Text(
+                            text = stringResource(
+                                R.string.virtual_optical_size,
+                                Formatter.formatFileSize(context, mediaSize)
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1
+                        )
+                    }
+                }
 
                 Text(
                     text = mediaName,
                     style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .basicMarquee()
                 )
-
-                if (mediaMounted && mediaSize > 0) {
-                    Text(
-                        text = stringResource(
-                            R.string.virtual_optical_size,
-                            Formatter.formatFileSize(context, mediaSize)
-                        ),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
             } else {
                 Text(
                     text = stringResource(R.string.virtual_optical_select_hint),
@@ -2819,16 +2843,13 @@ fun VirtualOpticalDriveSection(
                 )
             }
 
-            Text(
-                text = stringResource(
-                    if (serverRunning) {
-                        R.string.virtual_optical_server_running_hint
-                    } else {
-                        R.string.virtual_optical_server_stopped_hint
-                    }
-                ),
-                style = MaterialTheme.typography.bodySmall
-            )
+            if (!serverRunning) {
+                Text(
+                    text = stringResource(R.string.virtual_optical_server_stopped),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             if (!nativeReady) {
                 Text(
