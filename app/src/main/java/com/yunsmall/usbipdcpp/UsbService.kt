@@ -11,13 +11,21 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
+import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+
+enum class VirtualOpticalMountResult {
+    Success,
+    InvalidImage,
+    Failed
+}
 
 class UsbService : Service() {
 
@@ -25,6 +33,9 @@ class UsbService : Service() {
         private const val TAG = "UsbService"
         private const val NOTIFICATION_CHANNEL_ID = "usbipd_service"
         private const val NOTIFICATION_ID = 1
+        private const val OPTICAL_PREFERENCES = "virtual_optical_drive"
+        private const val OPTICAL_URI_KEY = "media_uri"
+        private const val OPTICAL_NAME_KEY = "media_name"
     }
 
     private val binder = UsbBinder()
@@ -57,6 +68,26 @@ class UsbService : Service() {
     // 0.0.0.0 conserve le comportement historique : écoute sur toutes les interfaces.
     @Volatile
     var listenAddress = "0.0.0.0"
+        private set
+
+    @Volatile
+    var virtualOpticalMediaMounted = false
+        private set
+
+    @Volatile
+    var virtualOpticalMediaName: String? = null
+        private set
+
+    @Volatile
+    var virtualOpticalMediaSize = 0L
+        private set
+
+    @Volatile
+    var virtualOpticalMediaUri: String? = null
+        private set
+
+    @Volatile
+    var virtualOpticalBusid: String? = null
         private set
 
     val boundDeviceNames: Set<String>
@@ -104,6 +135,9 @@ class UsbService : Service() {
         nativeReady = UsbIpNative.init()
         if (!nativeReady) {
             Log.e(TAG, "Native initialization failed, USB/IP features unavailable")
+        } else {
+            virtualOpticalBusid = UsbIpNative.getVirtualOpticalBusidNative()
+            restoreVirtualOpticalMedia()
         }
 
         val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED)
@@ -148,6 +182,178 @@ class UsbService : Service() {
                 UsbIpNative.release()
             }
         }.start()
+    }
+
+    private fun resolveVirtualOpticalDisplayName(uri: Uri): String? {
+        return try {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) {
+                    return@use null
+                }
+
+                val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (column < 0) {
+                    null
+                } else {
+                    cursor.getString(column)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to resolve virtual optical media name", e)
+            null
+        }
+    }
+
+    private fun rememberVirtualOpticalUri(uri: Uri, displayName: String?) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Persistent read permission unavailable for optical media", e)
+        }
+
+        getSharedPreferences(OPTICAL_PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putString(OPTICAL_URI_KEY, uri.toString())
+            .putString(OPTICAL_NAME_KEY, displayName)
+            .apply()
+    }
+
+    private fun restoreVirtualOpticalMedia() {
+        val storedUri =
+            getSharedPreferences(OPTICAL_PREFERENCES, Context.MODE_PRIVATE)
+                .getString(OPTICAL_URI_KEY, null)
+                ?: return
+
+        virtualOpticalMediaUri = storedUri
+        virtualOpticalMediaName =
+            getSharedPreferences(OPTICAL_PREFERENCES, Context.MODE_PRIVATE)
+                .getString(OPTICAL_NAME_KEY, null)
+
+        Thread {
+            runBlocking {
+                if (
+                    mountVirtualOptical(Uri.parse(storedUri), persistUri = false) !=
+                    VirtualOpticalMountResult.Success
+                ) {
+                    Log.w(TAG, "Failed to restore virtual optical media")
+                }
+            }
+        }.start()
+    }
+
+    private fun hasUnsupportedOpticalExtension(displayName: String?): Boolean {
+        val name = displayName?.trim().orEmpty()
+        if (name.isEmpty()) {
+            return false
+        }
+
+        val dot = name.lastIndexOf('.')
+        return dot > 0 && !name.endsWith(".iso", ignoreCase = true)
+    }
+
+    suspend fun mountVirtualOptical(
+        uri: Uri,
+        persistUri: Boolean = true
+    ): VirtualOpticalMountResult {
+        if (!nativeReady) {
+            return VirtualOpticalMountResult.Failed
+        }
+
+        return withContext(UsbIpNative.nativeDispatcher) {
+            val resolvedDisplayName = resolveVirtualOpticalDisplayName(uri)
+            if (hasUnsupportedOpticalExtension(resolvedDisplayName)) {
+                Log.w(
+                    TAG,
+                    "Rejected virtual optical media with unsupported filename: $resolvedDisplayName"
+                )
+                return@withContext VirtualOpticalMountResult.InvalidImage
+            }
+
+            val displayName = resolvedDisplayName ?: uri.lastPathSegment
+            val nativeResult = try {
+                contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                    UsbIpNative.mountVirtualOpticalNative(descriptor.fd)
+                } ?: UsbIpNative.VirtualOpticalMountResult.MOUNT_FAILED
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to open virtual optical media", e)
+                UsbIpNative.VirtualOpticalMountResult.MOUNT_FAILED
+            }
+
+            val result = when (nativeResult) {
+                UsbIpNative.VirtualOpticalMountResult.SUCCESS ->
+                    VirtualOpticalMountResult.Success
+                UsbIpNative.VirtualOpticalMountResult.INVALID_IMAGE ->
+                    VirtualOpticalMountResult.InvalidImage
+                else ->
+                    VirtualOpticalMountResult.Failed
+            }
+
+            if (result == VirtualOpticalMountResult.Success) {
+                if (persistUri) {
+                    rememberVirtualOpticalUri(uri, displayName)
+                }
+                virtualOpticalMediaUri = uri.toString()
+                virtualOpticalMediaName = displayName
+                virtualOpticalMediaMounted = true
+                virtualOpticalMediaSize =
+                    UsbIpNative.getVirtualOpticalMediaSizeNative()
+            }
+
+            result
+        }
+    }
+
+    suspend fun remountVirtualOptical(): VirtualOpticalMountResult {
+        val storedUri = virtualOpticalMediaUri
+            ?: return VirtualOpticalMountResult.Failed
+        return mountVirtualOptical(
+            Uri.parse(storedUri),
+            persistUri = false
+        )
+    }
+
+    suspend fun ejectVirtualOptical() {
+        if (!nativeReady) {
+            return
+        }
+
+        withContext(UsbIpNative.nativeDispatcher) {
+            UsbIpNative.ejectVirtualOpticalNative()
+            virtualOpticalMediaMounted = false
+            virtualOpticalMediaSize = 0L
+        }
+    }
+
+    suspend fun refreshVirtualOpticalState() {
+        if (!nativeReady) {
+            virtualOpticalMediaMounted = false
+            virtualOpticalMediaSize = 0L
+            return
+        }
+
+        withContext(UsbIpNative.nativeDispatcher) {
+            virtualOpticalMediaMounted =
+                UsbIpNative.isVirtualOpticalMediaMountedNative()
+            virtualOpticalMediaSize =
+                if (virtualOpticalMediaMounted) {
+                    UsbIpNative.getVirtualOpticalMediaSizeNative()
+                } else {
+                    0L
+                }
+            if (virtualOpticalBusid == null) {
+                virtualOpticalBusid =
+                    UsbIpNative.getVirtualOpticalBusidNative()
+            }
+        }
     }
 
     /**

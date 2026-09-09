@@ -29,7 +29,8 @@
     <string name="server_running">Serveur en cours d’exécution</string>
     <string name="server_stopped">Serveur arrêté</string>
     <string name="address">Adresse : %1$s:%2$d</string>
-    <string name="devices_bound">%1$d périphérique(s) associé(s)</string>
+    <string name="devices_bound">%1$d périphérique(s) physique(s) associé(s)</string>
+    <string name="virtual_devices_bound">%1$d périphérique(s) virtuel(s) associé(s)</string>
 
     <!-- Liste des périphériques -->
     <string name="usb_devices">Périphériques USB</string>
@@ -44,6 +45,23 @@
     <string name="bind">Associer</string>
     <string name="unbind">Dissocier</string>
     <string name="unknown_device">Périphérique inconnu</string>
+
+    <!-- Virtual Optical Drive -->
+    <string name="virtual_optical_drive">Lecteur optique virtuel</string>
+    <string name="virtual_optical_status">État : %1$s</string>
+    <string name="virtual_optical_media_mounted">ISO montée</string>
+    <string name="virtual_optical_no_media">Aucun média inséré</string>
+    <string name="virtual_optical_busid">Bus ID : %1$s</string>
+    <string name="virtual_optical_selected_iso">ISO sélectionnée</string>
+    <string name="virtual_optical_size">Taille : %1$s</string>
+    <string name="virtual_optical_select_iso">Sélectionner une ISO</string>
+    <string name="virtual_optical_change_iso">Changer d’ISO</string>
+    <string name="virtual_optical_mount">Monter</string>
+    <string name="virtual_optical_eject">Éjecter</string>
+    <string name="virtual_optical_mount_success">ISO montée</string>
+    <string name="virtual_optical_mount_failed">Impossible de monter l’ISO</string>
+    <string name="virtual_optical_invalid_iso">Image ISO invalide.</string>
+    <string name="virtual_optical_eject_success">ISO éjectée</string>
 
     <!-- Journal -->
     <string name="log">Journal</string>
@@ -91,6 +109,14 @@
     <string name="log_device_unbound_native_successfully">Périphérique %1$s dissocié avec succès (fd=%2$d)</string>
     <string name="log_device_unbound_successfully">Périphérique dissocié avec succès</string>
     <string name="log_unknown_message">%1$s</string>
+    <string name="log_virtual_optical_registered">Lecteur BD-ROM virtuel enregistré : busid=%1$s</string>
+    <string name="log_virtual_optical_mounted">Média optique virtuel monté : %1$d octets</string>
+    <string name="log_virtual_optical_ejected">Média optique virtuel éjecté</string>
+    <string name="log_virtual_optical_invalid_fd">Impossible de monter le média optique virtuel : fd invalide=%1$d</string>
+    <string name="log_virtual_optical_mount_failed">Échec du montage du média optique virtuel depuis fd=%1$d</string>
+    <string name="log_virtual_optical_invalid_image">Image optique virtuelle invalide refusée : fd=%1$d</string>
+    <string name="log_virtual_optical_validation_failed">Échec de la validation de l’image optique virtuelle : fd=%1$d</string>
+    <string name="log_virtual_optical_register_failed">Échec de l’enregistrement du lecteur BD-ROM virtuel</string>
 
     <!-- Messages -->
     <string name="please_start_server">Veuillez d’abord démarrer le serveur</string>

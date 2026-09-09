@@ -29,7 +29,8 @@
     <string name="server_running">服务器运行中</string>
     <string name="server_stopped">服务器已停止</string>
     <string name="address">地址: %1$s:%2$d</string>
-    <string name="devices_bound">已绑定 %1$d 个设备</string>
+    <string name="devices_bound">已绑定 %1$d 个物理设备</string>
+    <string name="virtual_devices_bound">已绑定 %1$d 个虚拟设备</string>
 
     <!-- Device List -->
     <string name="usb_devices">USB 设备</string>
@@ -44,6 +45,23 @@
     <string name="bind">绑定</string>
     <string name="unbind">解绑</string>
     <string name="unknown_device">未知设备</string>
+
+    <!-- Virtual Optical Drive -->
+    <string name="virtual_optical_drive">虚拟光驱</string>
+    <string name="virtual_optical_status">状态：%1$s</string>
+    <string name="virtual_optical_media_mounted">ISO 已挂载</string>
+    <string name="virtual_optical_no_media">未插入介质</string>
+    <string name="virtual_optical_busid">Bus ID：%1$s</string>
+    <string name="virtual_optical_selected_iso">已选择的 ISO</string>
+    <string name="virtual_optical_size">大小：%1$s</string>
+    <string name="virtual_optical_select_iso">选择 ISO</string>
+    <string name="virtual_optical_change_iso">更换 ISO</string>
+    <string name="virtual_optical_mount">挂载</string>
+    <string name="virtual_optical_eject">弹出</string>
+    <string name="virtual_optical_mount_success">ISO 已挂载</string>
+    <string name="virtual_optical_mount_failed">无法挂载 ISO</string>
+    <string name="virtual_optical_invalid_iso">ISO 镜像无效。</string>
+    <string name="virtual_optical_eject_success">ISO 已弹出</string>
 
     <!-- Log -->
     <string name="log">日志</string>
@@ -91,6 +109,14 @@
     <string name="log_device_unbound_native_successfully">成功取消绑定设备 %1$s (fd=%2$d)</string>
     <string name="log_device_unbound_successfully">设备解绑成功</string>
     <string name="log_unknown_message">%1$s</string>
+    <string name="log_virtual_optical_registered">虚拟 BD-ROM 已注册：busid=%1$s</string>
+    <string name="log_virtual_optical_mounted">虚拟光驱介质已挂载：%1$d 字节</string>
+    <string name="log_virtual_optical_ejected">虚拟光驱介质已弹出</string>
+    <string name="log_virtual_optical_invalid_fd">无法挂载虚拟光驱介质：无效 fd=%1$d</string>
+    <string name="log_virtual_optical_mount_failed">无法从 fd=%1$d 挂载虚拟光驱介质</string>
+    <string name="log_virtual_optical_invalid_image">已拒绝无效的虚拟光盘镜像：fd=%1$d</string>
+    <string name="log_virtual_optical_validation_failed">虚拟光盘镜像验证失败：fd=%1$d</string>
+    <string name="log_virtual_optical_register_failed">虚拟 BD-ROM 注册失败</string>
 
     <!-- Toast Messages -->
     <string name="please_start_server">请先启动服务器</string>

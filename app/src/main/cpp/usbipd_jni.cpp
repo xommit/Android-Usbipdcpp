@@ -15,6 +15,7 @@
 
 #include "jni_callback_sink.h"
 #include "jni_log_callback.h"
+#include "virtual_optical_drive.h"
 
 #define LOG_TAG "UsbIpNative"
 
@@ -30,9 +31,18 @@ namespace ErrorCode {
     constexpr int UNKNOWN_ERROR = 99;
 }
 
+namespace VirtualOpticalMountResult {
+    constexpr int SUCCESS = 0;
+    constexpr int INVALID_IMAGE = 1;
+    constexpr int MOUNT_FAILED = 2;
+}
+
 namespace {
     std::mutex g_server_mutex;
     std::unique_ptr<usbipdcpp::LibusbServer> g_server;
+    std::unique_ptr<usbipdcpp::StringPool> g_virtual_string_pool;
+    const std::shared_ptr<android_usbip::OpticalMediaSource> g_optical_media =
+        std::make_shared<android_usbip::OpticalMediaSource>();
     // 原子变量：并发调用 nativeInit 时只初始化一次（实际调用路径
     // 经 nativeDispatcher 单线程串行，原子性作为防御）
     std::atomic<bool> g_initialized{false};
@@ -50,6 +60,28 @@ namespace {
             case DeviceOperationResult::ClaimInterfaceFailed: return ErrorCode::CLAIM_INTERFACE_FAILED;
             default: return ErrorCode::UNKNOWN_ERROR;
         }
+    }
+
+    void resetVirtualDeviceState() {
+        g_virtual_string_pool.reset();
+    }
+
+    bool registerVirtualOpticalDevice() {
+        if (!g_server) {
+            return false;
+        }
+
+        g_virtual_string_pool = std::make_unique<usbipdcpp::StringPool>();
+        auto device = android_usbip::create_virtual_optical_device(
+            *g_virtual_string_pool,
+            g_optical_media
+        );
+        g_server->get_server().add_device(std::move(device));
+        spdlog::info(
+            "Virtual BD-ROM registered: busid={}",
+            android_usbip::kVirtualOpticalBusId
+        );
+        return true;
     }
 }
 
@@ -273,6 +305,14 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
         g_server = std::make_unique<usbipdcpp::LibusbServer>();
         g_server->set_hotplug_enabled(false);
 
+        // Register the virtual device on the same server as physical libusb devices.
+        if (!registerVirtualOpticalDevice()) {
+            spdlog::error("Failed to register virtual BD-ROM");
+            g_server.reset();
+            resetVirtualDeviceState();
+            return JNI_FALSE;
+        }
+
         // 0.0.0.0 保留原有行为；具体 IPv4 则真正限制 socket
         // 只监听该本地地址。
         asio::ip::tcp::endpoint endpoint(
@@ -280,8 +320,8 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
             static_cast<unsigned short>(port)
         );
 
-        // v1.0.8 起 start 不再抛异常，启动失败（如端口被占用）通过返回值报告
-        // The current implementation can also report an unavailable listen address.
+        // v1.0.8 起 start 不再抛异常，启动失败（如端口被占用、
+        // 地址当前不存在等）通过返回值报告
         auto ec = g_server->start(endpoint);
         if (ec) {
             spdlog::error(
@@ -292,6 +332,7 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
             );
             // start 失败路径内部已自清理（热插拔监控、libusb 事件线程），无需 stop 直接析构
             g_server.reset();
+            resetVirtualDeviceState();
             return JNI_FALSE;
         }
 
@@ -304,8 +345,8 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
         return JNI_TRUE;
 
     } catch (const std::exception& e) {
-        // make_unique 等构造路径的异常兜底（start 本身不再抛）
-        // make_address can also throw before server startup.
+        // make_address / make_unique 等构造路径的异常兜底。
+        // start 本身从 v1.0.8 起通过 error_code 报告失败。
         spdlog::error(
             "Failed to start server on {}:{}: {}",
             listen_address,
@@ -320,6 +361,7 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_startServer(
         }
 
         g_server.reset();
+        resetVirtualDeviceState();
         return JNI_FALSE;
     }
 }
@@ -339,6 +381,7 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_stopServer(JNIEnv* env, jobject thiz) {
     try {
         g_server->stop();
         g_server.reset();
+        resetVirtualDeviceState();
         g_server_running = false;
 
         spdlog::info("Server stopped successfully");
@@ -346,6 +389,7 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_stopServer(JNIEnv* env, jobject thiz) {
         // 停止失败也必须重置状态，否则 g_server_running 卡在 true 无法再次启动
         spdlog::error("Error stopping server: {}", e.what());
         g_server.reset();
+        resetVirtualDeviceState();
         g_server_running = false;
     }
 }
@@ -412,11 +456,78 @@ Java_com_yunsmall_usbipdcpp_UsbIpNative_notifyDeviceRemovedNative(
     g_server->notify_device_removed(busid_str);
 }
 
+JNIEXPORT jint JNICALL
+Java_com_yunsmall_usbipdcpp_UsbIpNative_mountVirtualOpticalNative(
+    JNIEnv* env, jobject thiz, jint fd) {
+    (void) env;
+    (void) thiz;
+
+    if (fd < 0) {
+        spdlog::error("Cannot mount virtual optical media: invalid fd={}", fd);
+        return VirtualOpticalMountResult::MOUNT_FAILED;
+    }
+
+    const auto validation = android_usbip::validate_optical_image_fd(fd);
+    if (validation == android_usbip::OpticalImageValidationResult::Invalid) {
+        spdlog::warn("Rejected invalid virtual optical image from fd={}", fd);
+        return VirtualOpticalMountResult::INVALID_IMAGE;
+    }
+    if (validation == android_usbip::OpticalImageValidationResult::IoError) {
+        spdlog::error("Failed to validate virtual optical image from fd={}", fd);
+        return VirtualOpticalMountResult::MOUNT_FAILED;
+    }
+
+    if (!g_optical_media->mount_from_fd(fd)) {
+        spdlog::error("Failed to mount virtual optical media from fd={}", fd);
+        return VirtualOpticalMountResult::MOUNT_FAILED;
+    }
+
+    spdlog::info(
+        "Virtual optical media mounted: {} bytes",
+        g_optical_media->size_bytes()
+    );
+    return VirtualOpticalMountResult::SUCCESS;
+}
+
+JNIEXPORT void JNICALL
+Java_com_yunsmall_usbipdcpp_UsbIpNative_ejectVirtualOpticalNative(
+    JNIEnv* env, jobject thiz) {
+    (void) env;
+    (void) thiz;
+
+    g_optical_media->eject();
+    spdlog::info("Virtual optical media ejected");
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_yunsmall_usbipdcpp_UsbIpNative_isVirtualOpticalMediaMountedNative(
+    JNIEnv* env, jobject thiz) {
+    (void) env;
+    (void) thiz;
+    return g_optical_media->media_present() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_yunsmall_usbipdcpp_UsbIpNative_getVirtualOpticalMediaSizeNative(
+    JNIEnv* env, jobject thiz) {
+    (void) env;
+    (void) thiz;
+    return static_cast<jlong>(g_optical_media->size_bytes());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_yunsmall_usbipdcpp_UsbIpNative_getVirtualOpticalBusidNative(
+    JNIEnv* env, jobject thiz) {
+    (void) thiz;
+    return env->NewStringUTF(android_usbip::kVirtualOpticalBusId);
+}
+
 JNIEXPORT void JNICALL
 Java_com_yunsmall_usbipdcpp_UsbIpNative_release(JNIEnv* env, jobject thiz) {
     spdlog::info("Releasing native resources");
 
     Java_com_yunsmall_usbipdcpp_UsbIpNative_stopServer(env, thiz);
+    g_optical_media->eject();
 
     if (g_initialized) {
         libusb_exit(nullptr);

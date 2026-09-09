@@ -26,6 +26,12 @@ object UsbIpNative {
         const val UNKNOWN_ERROR = 99
     }
 
+    object VirtualOpticalMountResult {
+        const val SUCCESS = 0
+        const val INVALID_IMAGE = 1
+        const val MOUNT_FAILED = 2
+    }
+
     external fun nativeInit(): Boolean
     // callback 传 null 表示清除回调（释放 JNI 全局引用），UI 销毁时调用
     external fun setLogCallback(callback: LogCallback?)
@@ -43,6 +49,13 @@ object UsbIpNative {
 
     external fun stopServer()
     external fun isServerRunning(): Boolean
+
+    external fun mountVirtualOpticalNative(fd: Int): Int
+    external fun ejectVirtualOpticalNative()
+    external fun isVirtualOpticalMediaMountedNative(): Boolean
+    external fun getVirtualOpticalMediaSizeNative(): Long
+    external fun getVirtualOpticalBusidNative(): String
+
     external fun release()
 
     /**
